@@ -109,7 +109,7 @@ class FuzzCalltreeAnalysis(analysis.AnalysisInterface):
                     node.dst_function_source_file, node.dst_function_name)
             elif profile.target_lang == "rust":
                 demangled_name = utils.demangle_rust_func(
-                    node.dst_function_name)
+                    node.dst_function_name, False)
             else:
                 demangled_name = utils.demangle_cpp_func(
                     node.dst_function_name)
@@ -472,7 +472,7 @@ class FuzzCalltreeAnalysis(analysis.AnalysisInterface):
 
             if profile.target_lang == "rust":
                 entry_function_name = utils.demangle_rust_func(
-                    entry.function_name)
+                    entry.function_name, False)
             else:
                 entry_function_name = utils.demangle_cpp_func(
                     entry.function_name)

@@ -16,6 +16,7 @@
 import os
 import copy
 import json
+import html
 import logging
 
 from typing import (
@@ -71,7 +72,7 @@ def add_func_to_reached_and_clone(
 
         if merged_profile.target_lang == "rust":
             f.reached_by_fuzzers.append(
-                utils.demangle_rust_func(func_to_add.function_name))
+                utils.demangle_rust_func(func_to_add.function_name, False))
         else:
             f.reached_by_fuzzers.append(
                 utils.demangle_cpp_func(func_to_add.function_name))
@@ -330,11 +331,14 @@ class OptimalTargets(analysis.AnalysisInterface):
                                                        fd.function_linenumber,
                                                        fd.function_name,
                                                        target_lang)
-            demangled = utils.demangle_cpp_func(fd.function_name)
-            demangled = utils.demangle_rust_func(demangled)
+            if target_lang == "rust":
+                # Keep the hash for the html report
+                demangled = utils.demangle_rust_func(fd.function_name, False)
+            else:
+                demangled = utils.demangle_cpp_func(fd.function_name)
             html_func_row = (
                 f"<a href=\"{ func_cov_url }\"><code class='language-clike'>"
-                f"{demangled}</code></a>")
+                f"{html.escape(demangled)}</code></a>")
             html_string += html_helpers.html_table_add_row([
                 html_func_row, fd.function_source_file, fd.arg_count,
                 fd.arg_types, fd.function_depth, fd.hitcount, fd.i_count,

@@ -99,7 +99,11 @@ def analyse_folder(
         project = frontend_jvm.load_treesitter_trees(source_files, entrypoint)
     elif language == constants.LANGUAGES.RUST:
         logger.info('Going Rust route')
-        logger.info('Loading tree-sitter trees and create base project')
+        logger.info('Loading tree-sitter trees')
+        if not entrypoint:
+            entrypoint = 'LLVMFuzzerTestOneInput'
+        if not project.get_source_codes_with_harnesses():
+            module_only = True
         project = frontend_rust.load_treesitter_trees(source_files)
     else:
         logger.error('Unsupported language: %s', language)

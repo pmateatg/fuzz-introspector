@@ -159,7 +159,7 @@ class FuzzAnnotatedCFG(analysis.AnalysisInterface):
         dst_options = [
             func_name,
             utils.demangle_cpp_func(func_name),
-            utils.demangle_rust_func(func_name),
+            utils.demangle_rust_func(func_name, False),
         ]
         for dst in dst_options:
             try:
@@ -182,7 +182,7 @@ class FuzzAnnotatedCFG(analysis.AnalysisInterface):
         dst_options = [
             func_name,
             utils.demangle_cpp_func(func_name),
-            utils.demangle_rust_func(func_name),
+            utils.demangle_rust_func(func_name, False),
         ]
         for dst in dst_options:
             try:

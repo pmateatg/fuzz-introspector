@@ -417,7 +417,7 @@ def get_url_to_cov_report(profile, node, target_coverage_url):
     dst_options = [
         node.dst_function_name,
         utils.demangle_cpp_func(node.dst_function_name),
-        utils.demangle_rust_func(node.dst_function_name),
+        utils.demangle_rust_func(node.dst_function_name, False),
         utils.demangle_jvm_func(node.dst_function_source_file,
                                 node.dst_function_name)
     ]
@@ -450,7 +450,7 @@ def get_parent_callsite_link(node, callstack, profile, target_coverage_url):
         dst_options = [
             parent_fname,
             utils.demangle_cpp_func(parent_fname),
-            utils.demangle_rust_func(parent_fname),
+            utils.demangle_rust_func(parent_fname, False),
         ]
         for dst in dst_options:
             # First try the cache
@@ -505,7 +505,7 @@ def overlay_calltree_with_coverage(
             demangled_name = utils.demangle_jvm_func(
                 node.dst_function_source_file, node.dst_function_name)
         elif profile.target_lang == "rust":
-            demangled_name = utils.demangle_rust_func(node.dst_function_name)
+            demangled_name = utils.demangle_rust_func(node.dst_function_name, True)
         else:
             demangled_name = utils.demangle_cpp_func(node.dst_function_name)
 
@@ -804,7 +804,7 @@ def detect_branch_level_blockers(
 def extract_namespace(mangled_function_name, return_type=None):
     # logger.info("Demangling: %s" % (mangled_function_name))
     demangled_func_name = utils.demangle_rust_func(
-        utils.demangle_cpp_func(mangled_function_name))
+        utils.demangle_cpp_func(mangled_function_name), False)
     # logger.info("Demangled name: %s" % (demangled_func_name))
     if return_type is not None and demangled_func_name.startswith(
             f"{return_type} "):

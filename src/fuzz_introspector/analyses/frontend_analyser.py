@@ -126,9 +126,14 @@ class FrontendAnalyser(analysis.AnalysisInterface):
                       out_dir: str) -> str:
         """Analysis function. Perform another frontend run and extract all
         test files in the project for additional analysis."""
-        # Configure base directory and detect language
+        # Configure base directory and language
         basefolder = os.environ.get('SRC', '/src')
-        language = utils.detect_language(basefolder)
+        language = proj_profile.language
+        if language is None:
+            logger.info("Language not set in main profile, auto-detecting for second run")
+            language = utils.detect_language(basefolder)
+        else:
+            logger.info(f"Using language from project profile for second frontend run: {language}")
 
         # Prepare separate out directory
         temp_dir = os.path.join(out_dir, 'second-frontend-run')

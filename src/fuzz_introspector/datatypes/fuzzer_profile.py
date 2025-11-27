@@ -97,7 +97,7 @@ class FuzzerProfile:
         ep_env = os.environ.get('FI_ENTRYPOINT', None)
         if ep_env:
             return ep_env
-        if self.target_lang == "c-cpp":
+        if self.target_lang == "c-cpp" or self.target_lang == "rust":
             return "LLVMFuzzerTestOneInput"
         elif self.target_lang == "python":
             return self.entrypoint_fun
@@ -113,12 +113,6 @@ class FuzzerProfile:
             else:
                 # Backward compatible for old Soot frontend
                 return f"[{cname}].{mname}"
-        elif self.target_lang == "rust":
-            # For rust, there is no entry function
-            # Instead, it is wrapped by the fuzz_target
-            # macro and we manually considered it as
-            # function in the frontend.
-            return "fuzz_target"
         elif self.target_lang == "go":
             return self.entrypoint_method
         else:
@@ -141,7 +135,8 @@ class FuzzerProfile:
                 ".java", "")
 
         elif self._target_lang == "rust":
-            return os.path.basename(self.fuzzer_source_file).replace(".rs", "")
+            if self.binary_executable !="" and os.path.basename(self.binary_executable) != '':
+                return os.path.basename(self.binary_executable)
 
         elif self._target_lang == "go":
             fuzzer_base_name = os.path.basename(self.fuzzer_source_file)
@@ -353,8 +348,12 @@ class FuzzerProfile:
 
     def _set_fd_cache(self):
         for _, fd in self.all_class_functions.items():
-            self.dst_to_fd_cache[utils.demangle_jvm_func(
-                fd.function_source_file, fd.function_name)] = fd
+            if self.target_lang == "jvm":
+                self.dst_to_fd_cache[utils.demangle_jvm_func(
+                    fd.function_source_file, fd.function_name)] = fd
+            elif self.target_lang == "rust":
+                demangled = utils.demangle_rust_func(fd.function_name, True)
+                self.dst_to_fd_cache[demangled] = fd
             self.dst_to_fd_cache[utils.normalise_str(fd.function_name)] = fd
 
     def accummulate_profile(self, target_folder: str, return_dict: None,

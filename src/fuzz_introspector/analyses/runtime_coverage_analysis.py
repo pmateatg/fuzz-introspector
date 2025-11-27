@@ -100,7 +100,7 @@ class RuntimeCoverageAnalysis(analysis.AnalysisInterface):
                     reached_by = ""
 
                 if proj_profile.target_lang == "rust":
-                    demangled_name = utils.demangle_rust_func(funcname)
+                    demangled_name = utils.demangle_rust_func(funcname, True)
                 else:
                     demangled_name = utils.demangle_cpp_func(funcname)
 

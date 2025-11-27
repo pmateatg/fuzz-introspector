@@ -151,21 +151,61 @@ def demangle_cpp_func(funcname: str) -> str:
     except Exception:
         return funcname
 
+def normalize_rust_llvm_signature(signature):
+    """Converts raw LLVM/Rust symbols which are in C++ ABI format into canonical
+    form for matching."""
 
-def demangle_rust_func(funcname: str) -> str:
+    sig = signature.replace("$LT$", "<") \
+                    .replace("$GT$", ">") \
+                    .replace("$u20$", " ") \
+                    .replace("$u7b$", "{") \
+                    .replace("$u7d$", "}") \
+                    .replace("$RF$", "&") \
+                    .replace("$u21$", "!") \
+                    .replace("$u5b$", "[") \
+                    .replace("$u5d$", "]") \
+                    .replace("$LP$", "(") \
+                    .replace("$RP$", ")") \
+                    .replace("$BP$", "*") \
+                    .replace("$C$", ",") \
+                    .replace("..", "::")
+
+    # Handles 'impl' syntax and formats it as the
+    # demangled coverage report functions look like
+    # From: module::_<impl Trait for Type>::method
+    # To:   Type as Trait::method
+    match = re.search(r'_<impl (.*?) for (.*?)>::(.*)', sig)
+    if match:
+        trait = match.group(1)
+        type_name = match.group(2)
+        method = match.group(3)
+        return f"{type_name} as {trait}::{method}"
+    return sig
+
+def demangle_rust_func(funcname: str, strip_hash: bool) -> str:
     """Demangle the mangled rust function names."""
-    # Ignore all non-mangled rust function names
-    # All mangled rust function names started with _R
-    if not funcname.startswith('_R'):
-        return funcname
+    demangled = funcname
 
-    try:
-        demangled: str = rust_demangler.demangle(funcname.replace(' ', ''))
-        demangled = demangled.replace('<', '').replace('>', '')
-        return demangled
-    except Exception:
-        return funcname
+    # Rust V0 mangling starts with _R, used in debug builds and coverage reports
+    if funcname.startswith('_R'):
+        try:
+            demangled = rust_demangler.demangle(funcname.replace(' ', ''))
+            # Rust V0 mangling specific cleanup
+            demangled = demangled.replace('<', '').replace('>', '')
+        except Exception:
+            demangled = funcname
+    else:
+        # Legacy/C++ Itanium ABI (_ZN...), used in LLVM IR, LTO Pass export
+        try:
+            demangled = cxxfilt.demangle(funcname)
+        except Exception:
+            pass
+        demangled = normalize_rust_llvm_signature(demangled)
 
+    if strip_hash:
+        demangled = re.sub(r'::h[0-9a-fA-F]+$', '', demangled)
+
+    return demangled
 
 def demangle_jvm_func(package: str, funcname: str) -> str:
     """Add package class name to uniquly identify jvm functons"""
@@ -310,7 +350,7 @@ def load_func_names(input_list: list[str],
         if (check_for_blocking
                 and constants.BLOCKLISTED_FUNCTION_NAMES.match(reached)):
             continue
-        loaded.append(demangle_rust_func(demangle_cpp_func(reached)))
+        loaded.append(demangle_rust_func(demangle_cpp_func(reached), False))
     return loaded
 
 
@@ -539,46 +579,6 @@ def copy_source_files(required_class_list: list[str],
     else:
         logger.debug('Language: %s not support. Skipping source file copy.',
                      language)
-
-
-def locate_rust_fuzz_key(funcname: str, fuzz_map: dict[str,
-                                                       Any]) -> Optional[str]:
-    """Helper method for locating rust fuzz key with missing crate
-    information."""
-
-    while funcname:
-        match = next((key for key in fuzz_map if key.endswith(funcname)), None)
-        # Ensure the matched key contains crate information which is
-        # unique for rust
-        if match and '::' in match:
-            return match
-
-        if '::' in funcname:
-            funcname = funcname.split('::', 1)[1]
-        else:
-            break
-
-    return None
-
-
-def locate_rust_fuzz_item(funcname: str, item_list: list[str]) -> str:
-    """Helper method for locating str item with missing crate information."""
-
-    if funcname in item_list:
-        return funcname
-
-    while funcname:
-        for item in item_list:
-            if item.endswith(funcname) and '::' in item:
-                return item
-
-        if '::' in funcname:
-            funcname = funcname.split('::', 1)[1]
-        else:
-            break
-
-    return ''
-
 
 def detect_language(directory) -> str:
     """Given a folder finds the likely programming language of the project"""

@@ -556,7 +556,7 @@ class MergedProjectProfile:
         for fd_k, fd in self.all_functions.items():
             if self.target_lang == "rust":
                 self.dst_to_fd_cache[utils.demangle_rust_func(
-                    fd.function_name)] = fd
+                    fd.function_name, True)] = fd
             else:
                 self.dst_to_fd_cache[utils.demangle_cpp_func(
                     fd.function_name)] = fd
