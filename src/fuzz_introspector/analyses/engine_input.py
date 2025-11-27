@@ -15,6 +15,7 @@
 
 import json
 import logging
+import html
 import os
 
 from typing import (List, Dict)
@@ -180,7 +181,7 @@ class EngineInput(analysis.AnalysisInterface):
             f"<p>Use one of these functions as input to libfuzzer with flag: "
             f"-focus_function name </p>"
             f"<pre><code class='language-clike'>"
-            f"-focus_function={focus_functions}"
+            f"-focus_function={[html.escape(f) for f in focus_functions]}"
             f"</code></pre><br>")
         return html_string
 

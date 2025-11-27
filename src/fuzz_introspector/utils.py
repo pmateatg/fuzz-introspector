@@ -151,13 +151,37 @@ def demangle_cpp_func(funcname: str) -> str:
     except Exception:
         return funcname
 
+def normalize_rust_llvm_signature(signature):
+    """Converts raw LLVM/Rust symbols which are in C++ ABI format into canonical
+    form for matching."""
+
+    return signature.replace("$LT$", "<") \
+                    .replace("$GT$", ">") \
+                    .replace("$u20$", " ") \
+                    .replace("$u7b$", "{") \
+                    .replace("$u7d$", "}") \
+                    .replace("$RF$", "&") \
+                    .replace("$u21$", "!") \
+                    .replace("$u5b$", "[") \
+                    .replace("$u5d$", "]") \
+                    .replace("$LP$", "(") \
+                    .replace("$RP$", ")") \
+                    .replace("$BP$", "*") \
+                    .replace("$C$", ",") \
+                    .replace("..", "::")
 
 def demangle_rust_func(funcname: str) -> str:
     """Demangle the mangled rust function names."""
-    # Ignore all non-mangled rust function names
     # All mangled rust function names started with _R
+    # The Rust LLVM LTO module contains _ZN... (C++ ABI) too.
+    # We must try demangling both to get a canonical demangled name
+    # https://blog.rust-lang.org/2025/11/20/switching-to-v0-mangling-on-nightly/#context
     if not funcname.startswith('_R'):
-        return funcname
+        try:
+            demangled: str = cxxfilt.demangle(funcname)
+        except Exception:
+            demangled = funcname
+        return normalize_rust_llvm_signature(demangled)
 
     try:
         demangled: str = rust_demangler.demangle(funcname.replace(' ', ''))
@@ -539,46 +563,6 @@ def copy_source_files(required_class_list: list[str],
     else:
         logger.debug('Language: %s not support. Skipping source file copy.',
                      language)
-
-
-def locate_rust_fuzz_key(funcname: str, fuzz_map: dict[str,
-                                                       Any]) -> Optional[str]:
-    """Helper method for locating rust fuzz key with missing crate
-    information."""
-
-    while funcname:
-        match = next((key for key in fuzz_map if key.endswith(funcname)), None)
-        # Ensure the matched key contains crate information which is
-        # unique for rust
-        if match and '::' in match:
-            return match
-
-        if '::' in funcname:
-            funcname = funcname.split('::', 1)[1]
-        else:
-            break
-
-    return None
-
-
-def locate_rust_fuzz_item(funcname: str, item_list: list[str]) -> str:
-    """Helper method for locating str item with missing crate information."""
-
-    if funcname in item_list:
-        return funcname
-
-    while funcname:
-        for item in item_list:
-            if item.endswith(funcname) and '::' in item:
-                return item
-
-        if '::' in funcname:
-            funcname = funcname.split('::', 1)[1]
-        else:
-            break
-
-    return ''
-
 
 def detect_language(directory) -> str:
     """Given a folder finds the likely programming language of the project"""

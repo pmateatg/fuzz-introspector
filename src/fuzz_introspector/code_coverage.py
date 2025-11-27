@@ -181,9 +181,9 @@ class CoverageProfile:
         elif utils.remove_jvm_generics(funcname) in self.covmap:
             fuzz_key = utils.remove_jvm_generics(funcname)
         else:
-            # Handle special case for rust where crate is missing from function name
-            fuzz_key = utils.locate_rust_fuzz_key(
-                utils.demangle_rust_func(funcname), self.covmap)
+            fuzz_key = utils.demangle_rust_func(funcname)
+            # Strip the hash for fuzzy matching
+            fuzz_key = fuzz_key.rsplit("::h", 1)[0]
 
         if fuzz_key is None or fuzz_key not in self.covmap:
             return []
@@ -375,15 +375,17 @@ class CoverageProfile:
         elif utils.remove_jvm_generics(funcname) in self.covmap:
             fuzz_key = utils.remove_jvm_generics(funcname)
         else:
-            # Handle special case for rust where crate is missing from function name
-            fuzz_key = utils.locate_rust_fuzz_key(
-                utils.demangle_rust_func(funcname), self.covmap)
+            fuzz_key = utils.demangle_rust_func(funcname)
+            # Strip the hash for fuzzy matching
+            fuzz_key = fuzz_key.rsplit("::h", 1)[0]
 
         if fuzz_key is None:
             return None, None
 
-        lines_hit = [ht for ln, ht in self.covmap[fuzz_key] if ht > 0]
-        return len(self.covmap[fuzz_key]), len(lines_hit)
+        if fuzz_key in self.covmap:
+            lines_hit = [ht for ln, ht in self.covmap[fuzz_key] if ht > 0]
+            return len(self.covmap[fuzz_key]), len(lines_hit)
+        return 0, 0
 
     def is_func_lineno_hit(self, func_name: str, lineno: int) -> bool:
         """
@@ -461,7 +463,7 @@ def load_llvm_coverage(target_dir: str,
         logger.info(f"Loading LLVM coverage for directory {target_dir}")
 
     all_coverage_reports = utils.get_all_files_in_tree_with_regex(
-        target_dir, ".*\.covreport$")
+        target_dir, ".*\\.covreport$")
     logger.info(f"Found {len(all_coverage_reports)} coverage reports")
 
     coverage_reports = list()
@@ -509,7 +511,9 @@ def load_llvm_coverage(target_dir: str,
                     else:
                         curr_func = line.replace(" ", "").replace(":", "")
                     if is_rust:
-                        curr_func = utils.demangle_rust_func(curr_func)
+                        demangled_name = utils.demangle_rust_func(curr_func)
+                        # Strip the hash for fuzzy matching
+                        curr_func = demangled_name.rsplit("::h", 1)[0]
                     else:
                         curr_func = utils.demangle_cpp_func(curr_func)
                     cp.covmap[curr_func] = list()

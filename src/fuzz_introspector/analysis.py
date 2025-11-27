@@ -506,6 +506,9 @@ def overlay_calltree_with_coverage(
                 node.dst_function_source_file, node.dst_function_name)
         elif profile.target_lang == "rust":
             demangled_name = utils.demangle_rust_func(node.dst_function_name)
+            # Strip the hash for fuzzy matching introspector LLVM LTO and coverage
+            # builds, which use different flags resulting in different hashes
+            demangled_name = demangled_name.rsplit("::h", 1)[0]
         else:
             demangled_name = utils.demangle_cpp_func(node.dst_function_name)
 

@@ -14,6 +14,7 @@
 """Analysis plugin for sink functions of interest for different CWE"""
 
 import json
+import html
 import logging
 
 from bs4 import BeautifulSoup as bs
@@ -361,7 +362,7 @@ class SinkCoverageAnalyser(analysis.AnalysisInterface):
                 data-paddingleft="{indentation}" style="padding-left: {indentation}">
                 <span class="node-depth-wrapper">{depth_count}</span>
                     <code class="language-clike">
-                        {fd.function_name}
+                        {html.escape(fd.function_name)}
                     </code>
                     <span class="coverage-line-filename">
                         in <a href="{link}">

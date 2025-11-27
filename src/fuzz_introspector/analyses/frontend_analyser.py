@@ -126,9 +126,14 @@ class FrontendAnalyser(analysis.AnalysisInterface):
                       out_dir: str) -> str:
         """Analysis function. Perform another frontend run and extract all
         test files in the project for additional analysis."""
-        # Configure base directory and detect language
+        # Configure base directory and language
         basefolder = os.environ.get('SRC', '/src')
-        language = utils.detect_language(basefolder)
+        language = proj_profile.language
+        if language is None:
+            logger.info("Language not set in main profile, auto-detecting for second run")
+            language = utils.detect_language(basefolder)
+        else:
+            logger.info("Using language from project profile for second frontend run: {language}")
 
         # Prepare separate out directory
         temp_dir = os.path.join(out_dir, 'second-frontend-run')
@@ -137,19 +142,19 @@ class FrontendAnalyser(analysis.AnalysisInterface):
         # Perform a second run of the frontend on the target project. This
         # ensure non-compiled source codes ignored by LTO are also included
         # in the analysis.
-        oss_fuzz.analyse_folder(language=language,
-                                directory=basefolder,
-                                out=temp_dir,
-                                module_only=True)
+        # TODO(pmate) See how the rust second run can be introduced without clobbering
+        #oss_fuzz.analyse_folder(language=language,
+        #                        directory=basefolder,
+        #                        out=temp_dir,
+        #                        module_only=True)
 
         # Generate FI backend analysis report from second frontend run result
-        introspection_proj = analysis.IntrospectionProject(
-            proj_profile.language, basefolder, temp_dir)
-        introspection_proj.load_data_files(True, temp_dir, basefolder)
+        #introspection_proj = analysis.IntrospectionProject(
+        #    proj_profile.language, basefolder, temp_dir)
+        #introspection_proj.load_data_files(True, temp_dir, basefolder)
 
         # Calls standalone analysis
-        self.standalone_analysis(introspection_proj.proj_profile,
-                                 introspection_proj.profiles, out_dir)
+        self.standalone_analysis(proj_profile, profiles, out_dir)
 
         return ''
 

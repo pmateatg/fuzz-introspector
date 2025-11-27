@@ -75,6 +75,8 @@ def analyse_folder(
     logger.info('Found %d files to include in analysis', len(source_files))
 
     project: Project = Project([])
+    # TODO(pmate) refine low fidelity rust analysis avoidance
+    return project, None
 
     # Process for different language
     if language in [constants.LANGUAGES.C, constants.LANGUAGES.CPP]:
@@ -99,8 +101,11 @@ def analyse_folder(
         project = frontend_jvm.load_treesitter_trees(source_files, entrypoint)
     elif language == constants.LANGUAGES.RUST:
         logger.info('Going Rust route')
-        logger.info('Loading tree-sitter trees and create base project')
-        project = frontend_rust.load_treesitter_trees(source_files)
+        logger.info('Loading tree-sitter trees')
+        if not entrypoint:
+            entrypoint = 'LLVMFuzzerTestOneInput'
+        if not project.get_source_codes_with_harnesses():
+            module_only = True
     else:
         logger.error('Unsupported language: %s', language)
         return Project([]), []

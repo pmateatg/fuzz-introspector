@@ -101,6 +101,8 @@ class RuntimeCoverageAnalysis(analysis.AnalysisInterface):
 
                 if proj_profile.target_lang == "rust":
                     demangled_name = utils.demangle_rust_func(funcname)
+                    # Strip the hash for fuzzy matching
+                    demangled_name = demangled_name.rsplit("::h", 1)[0]
                 else:
                     demangled_name = utils.demangle_cpp_func(funcname)
 
