@@ -325,7 +325,7 @@ def get_target_coverage_url(coverage_url: str, target_name: str,
     """
     logger.info('Extracting coverage for %s -- %s', coverage_url, target_name)
     if os.environ.get('FUZZ_INTROSPECTOR'):
-        if target_lang == 'c-cpp':
+        if target_lang in ['c-cpp', 'rust']:
             return coverage_url.replace('reports',
                                         'reports-by-target').replace(
                                             '/linux', f'/{target_name}/linux')
