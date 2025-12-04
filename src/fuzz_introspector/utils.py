@@ -340,7 +340,8 @@ def get_target_coverage_url(coverage_url: str, target_name: str,
 
 
 def load_func_names(input_list: list[str],
-                    check_for_blocking: bool = True) -> list[str]:
+                    check_for_blocking: bool = True,
+                    is_rust = False) -> list[str]:
     """
     Takes a list of function names (typically from llvm profile)
     and makes sure the output names are demangled.
@@ -350,7 +351,10 @@ def load_func_names(input_list: list[str],
         if (check_for_blocking
                 and constants.BLOCKLISTED_FUNCTION_NAMES.match(reached)):
             continue
-        loaded.append(demangle_rust_func(demangle_cpp_func(reached), False))
+        if is_rust:
+            loaded.append(demangle_rust_func(reached, False))
+        else:
+            loaded.append(demangle_cpp_func(reached))
     return loaded
 
 

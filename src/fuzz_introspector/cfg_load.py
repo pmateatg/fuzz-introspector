@@ -17,6 +17,7 @@ import logging
 
 from typing import (List, Optional)
 
+from fuzz_introspector import utils
 from fuzz_introspector.exceptions import CalltreeError
 
 logger = logging.getLogger(name=__name__)
@@ -85,7 +86,7 @@ def print_ctcs_tree(ctcs: CalltreeCallsite) -> None:
 def data_file_read_calltree(cfg_content: str) -> Optional[CalltreeCallsite]:
     """
     Extracts the calltree of a fuzzer from a .data file.
-    This is for C/C++ files
+    This is for C/C++ and Rust files
 
     Returns a CalltreeCallsite that is the root of the tree read.
     """
@@ -124,6 +125,8 @@ def data_file_read_calltree(cfg_content: str) -> Optional[CalltreeCallsite]:
             depth = int(space_count / 2)
 
             # Create a callsite nide
+            if filename.endswith(".rs"):
+                target_func = utils.demangle_rust_func(target_func, False)
             ctcs = CalltreeCallsite(target_func, filename, depth, linenumber,
                                     curr_ctcs_node)
 

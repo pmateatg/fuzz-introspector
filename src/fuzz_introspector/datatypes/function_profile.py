@@ -49,7 +49,7 @@ class FunctionProfile:
         self.edge_count = elem['EdgeCount']
         self.cyclomatic_complexity = elem['CyclomaticComplexity']
         self.functions_reached = utils.load_func_names(
-            elem['functionsReached'], False)
+            elem['functionsReached'], False, self.function_source_file.endswith(".rs"))
         self.function_uses = elem['functionUses']
         self.function_depth = elem['functionDepth']
         self.constants_touched = elem['constantsTouched']
@@ -62,7 +62,7 @@ class FunctionProfile:
         # could avoid loss of call tree information when functions_reached
         # is further propagated by later operations.
         self.functions_called = utils.load_func_names(elem['functionsReached'],
-                                                      False)
+                                                      False, self.function_source_file.endswith(".rs"))
 
         # Check if this function is accessible or contains special properties and data
         # Currently, only JVM projects are using these parameters
@@ -152,7 +152,7 @@ class FunctionProfile:
         bp_loaded = {}
         for entry in yaml_branch_profiles:
             new_branch = branch_profile.BranchProfile()
-            new_branch.assign_from_yaml_elem(entry)
+            new_branch.assign_from_yaml_elem(entry, self.function_source_file.endswith(".rs"))
             bp_loaded[new_branch.branch_pos] = new_branch
 
         return bp_loaded
@@ -167,8 +167,8 @@ class FunctionProfile:
 
             callsite_src = callsite['Src'].split(',')[0].replace(
                 ':', '#%s:' % self.function_name)
-            callsite_list.append(callsite_src)
-            cs_loaded.update({callsite['Dst']: callsite_list})
+            callsite_list.append(utils.demangle_rust_func(callsite_src, False))
+            cs_loaded.update({utils.demangle_rust_func(callsite['Dst'], False): callsite_list})
 
         return cs_loaded
 

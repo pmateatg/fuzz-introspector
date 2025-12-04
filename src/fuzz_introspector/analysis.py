@@ -69,7 +69,8 @@ class IntrospectionProject():
                     fuzzer_profile.FuzzerProfile('cfg_file',
                                                  report_yaml,
                                                  self.language,
-                                                 cfg_content=calltree_text))
+                                                 cfg_content=calltree_text,
+                                                 project_graph_only=(self.language == "rust")))
         else:
             logger.info('Loading profiles using files')
             self.profiles = data_loader.load_all_profiles(

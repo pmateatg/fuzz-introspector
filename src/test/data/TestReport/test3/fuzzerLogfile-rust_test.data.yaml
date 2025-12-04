@@ -1,0 +1,148 @@
+All functions:
+  Function list name: All functions
+  Elements:
+    - functionName: LLVMFuzzerTestOneInput
+      functionSourceFile: '/rust/registry/src/index.crates.io-1949cf8c6b5b557f/libfuzzer-sys-0.4.10/src/lib.rs'
+      linkageType: externalLinkage
+      functionLinenumber: 60
+      functionLinenumberEnd: 73
+      functionDepth: 0
+      returnType: int
+      argCount: 2
+      argTypes: ['N/A', 'size_t']
+      constantsTouched: []
+      argNames: ['', '']
+      BBCount: 9
+      ICount: 39
+      EdgeCount: 12
+      CyclomaticComplexity: 5
+      functionsReached: []
+      functionUses: 0
+      BranchProfiles: []
+      Callsites:
+        - Src: 'src/lib.rs:70,13'
+          Dst: rust_fuzzer_test_input
+    - functionName: rust_fuzzer_test_input
+      functionSourceFile: '/rust/registry/src/index.crates.io-1949cf8c6b5b557f/libfuzzer-sys-0.4.10/src/lib.rs'
+      linkageType: externalLinkage
+      functionLinenumber: 334
+      functionLinenumberEnd: 365
+      functionDepth: 0
+      returnType: int
+      argCount: 1
+      argTypes: ['N/A']
+      constantsTouched: []
+      argNames: ['']
+      BBCount: 35
+      ICount: 123
+      EdgeCount: 50
+      CyclomaticComplexity: 17
+      functionsReached: []
+      functionUses: 1
+      BranchProfiles: []
+      Callsites:
+        - Src: 'src/lib.rs:350,1'
+          Dst: _ZN7project10main_logic17h0123456789abcdefE
+    - functionName: _ZN7project10main_logic17h0123456789abcdefE
+      functionSourceFile: '/src/project/src/lib.rs'
+      linkageType: internalLinkage
+      functionLinenumber: 20
+      functionLinenumberEnd: 50
+      functionDepth: 1
+      returnType: void
+      argCount: 0
+      argTypes: []
+      constantsTouched: []
+      argNames: []
+      BBCount: 10
+      ICount: 50
+      EdgeCount: 10
+      CyclomaticComplexity: 5
+      functionsReached: []
+      functionUses: 1
+      BranchProfiles: []
+      Callsites:
+        - Src: '/src/project/src/lib.rs:25,10'
+          Dst: _ZN3std4iter8Iterator3map17h0123456789abcdefE
+    - functionName: _ZN3std4iter8Iterator3map17h0123456789abcdefE
+      functionSourceFile: '/src/rust/library/core/src/iter/traits/iterator.rs'
+      linkageType: internalLinkage
+      functionLinenumber: 600
+      functionLinenumberEnd: 620
+      functionDepth: 2
+      returnType: void
+      argCount: 1
+      argTypes: ['N/A']
+      constantsTouched: []
+      argNames: []
+      BBCount: 5
+      ICount: 20
+      EdgeCount: 5
+      CyclomaticComplexity: 2
+      functionsReached: []
+      functionUses: 1
+      BranchProfiles: []
+      Callsites:
+        - Src: '/src/rust/library/core/src/iter/traits/iterator.rs:610,5'
+          Dst: _ZN7project7helpers4util17h0123456789abcdefE
+    - functionName: _ZN7project7helpers4util17h0123456789abcdefE
+      functionSourceFile: '/src/project/src/utils.rs'
+      linkageType: internalLinkage
+      functionLinenumber: 30
+      functionLinenumberEnd: 40
+      functionDepth: 3
+      returnType: void
+      argCount: 0
+      argTypes: []
+      constantsTouched: []
+      argNames: []
+      BBCount: 8
+      ICount: 30
+      EdgeCount: 8
+      CyclomaticComplexity: 3
+      functionsReached: []
+      functionUses: 1
+      BranchProfiles: []
+      Callsites:
+        - Src: '/src/project/src/utils.rs:35,1'
+          Dst: _ZN3std5slice4sort17h0123456789abcdefE
+        - Src: '/src/project/src/utils.rs:36,1'
+          Dst: _ZN5serde4json8from_str17h0123456789abcdefE
+    - functionName: _ZN3std5slice4sort17h0123456789abcdefE
+      functionSourceFile: '/src/rust/library/core/src/slice/mod.rs'
+      linkageType: externalLinkage
+      functionLinenumber: 500
+      functionLinenumberEnd: 550
+      functionDepth: 4
+      returnType: void
+      argCount: 1
+      argTypes: ['N/A']
+      constantsTouched: []
+      argNames: []
+      BBCount: 20
+      ICount: 100
+      EdgeCount: 30
+      CyclomaticComplexity: 10
+      functionsReached: []
+      functionUses: 1
+      BranchProfiles: []
+      Callsites: []
+    - functionName: _ZN5serde4json8from_str17h0123456789abcdefE
+      functionSourceFile: '/rust/registry/src/github.com/serde/serde.rs'
+      linkageType: externalLinkage
+      functionLinenumber: 100
+      functionLinenumberEnd: 120
+      functionDepth: 4
+      returnType: void
+      argCount: 1
+      argTypes: ['N/A']
+      constantsTouched: []
+      argNames: []
+      BBCount: 15
+      ICount: 60
+      EdgeCount: 20
+      CyclomaticComplexity: 8
+      functionsReached: []
+      functionUses: 1
+      BranchProfiles: []
+      Callsites: []

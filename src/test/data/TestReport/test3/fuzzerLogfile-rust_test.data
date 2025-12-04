@@ -1,0 +1,9 @@
+Call tree
+LLVMFuzzerTestOneInput /rust/registry/src/index.crates.io-1949cf8c6b5b557f/libfuzzer-sys-0.4.10/src/lib.rs linenumber=-1
+  rust_fuzzer_test_input /rust/registry/src/index.crates.io-1949cf8c6b5b557f/libfuzzer-sys-0.4.10/src/lib.rs linenumber=334
+    _ZN7project10main_logic17h0123456789abcdefE /src/project/src/lib.rs linenumber=20
+      _ZN3std4iter8Iterator3map17h0123456789abcdefE /src/rust/library/core/src/iter/traits/iterator.rs linenumber=600
+        _ZN7project7helpers4util17h0123456789abcdefE /src/project/src/utils.rs linenumber=30
+          _ZN3std5slice4sort17h0123456789abcdefE /src/rust/library/core/src/slice/mod.rs linenumber=500
+          _ZN5serde4json8from_str17h0123456789abcdefE /rust/registry/src/github.com/serde/serde.rs linenumber=100
+====================================
