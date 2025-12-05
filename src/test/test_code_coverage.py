@@ -144,3 +144,64 @@ def test_jvm_coverage(tmpdir, sample_jvm_coverage_xml):
     assert cp.covmap["[BASE64EncoderStreamFuzzer].<init>()"] == [(23, 0)]
     assert cp.covmap[
         "[BASE64EncoderStreamFuzzer].fuzzerTestOneInput(FuzzedDataProvider)"] == [(25, 3), (27, 6)]
+
+def test_get_hit_details_exact_match():
+    """Test simple retrieval where function name matches exactly."""
+    cov_profile = code_coverage.CoverageProfile()
+    cov_profile.covmap = {
+        "my_func": [(10, 5), (11, 2)]
+    }
+    # Should return the list exactly as is
+    assert cov_profile.get_hit_details("my_func") == [(10, 5), (11, 2)]
+
+def test_get_hit_details_aggregates_candidates():
+    """Test that monomorphized variants (e.g. Rust generics) are summed correctly."""
+    # Setup: 'process' does not exist directly, but variants do.
+    # Line 100 is shared (should sum hits: 5 + 3 = 8).
+    # Line 102 is unique to variant_b.
+    cov_profile = code_coverage.CoverageProfile()
+    cov_profile.covmap = {
+        "foo::process::variant_a": [(100, 5)],
+        "foo::process::variant_b": [(100, 3), (102, 1)]
+    }
+    # Should handle demangling and summarizing the hits
+    # Mangled name of foo::process
+    mangled_name = "_ZN3foo7process17h5156b23b93aca8c0E"
+    assert cov_profile.get_hit_details(mangled_name) == [(100, 8), (102, 1)]
+
+def test_get_hit_summary_exact_match():
+    """Test simple retrieval where function name matches exactly."""
+    cov_profile = code_coverage.CoverageProfile()
+    cov_profile.covmap = {
+        "my_func": [(10, 5), (11, 0), (12, 1)]
+    }
+    # Total lines: 3
+    # Hit lines: 2 (Line 10 and 12)
+    assert cov_profile.get_hit_summary("my_func") == (3, 2)
+
+def test_get_hit_summary_aggregates_candidates():
+    """Test that monomorphized variants (e.g. Rust generics) are unified correctly."""
+    cov_profile = code_coverage.CoverageProfile()
+    cov_profile.covmap = {
+        "foo::process::variant_a": [(100, 5), (200, 0)],
+        "foo::process::variant_b": [(100, 0), (300, 1)]
+    }
+
+    # 1. Union of Total Lines: {100, 200, 300} -> 3 total lines.
+    # 2. Union of Hit Lines:
+    #    - Line 100 is hit in A (even though missed in B, it counts as hit).
+    #    - Line 300 is hit in B.
+    #    - Line 200 is never hit.
+    #    -> {100, 300} -> 2 hit lines.
+
+    # Mangled name of foo::process
+    mangled_name = "_ZN3foo7process17h5156b23b93aca8c0E"
+
+    assert cov_profile.get_hit_summary(mangled_name) == (3, 2)
+
+def test_get_hit_summary_no_match():
+    """Test that non-existent functions return (0, 0)."""
+    cov_profile = code_coverage.CoverageProfile()
+    cov_profile.covmap = {"existing_func": [(1, 1)]}
+
+    assert cov_profile.get_hit_summary("ghost_function") == (0, 0)

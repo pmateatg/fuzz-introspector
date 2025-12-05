@@ -183,10 +183,29 @@ class CoverageProfile:
         else:
             fuzz_key = utils.demangle_rust_func(funcname, True)
 
-        if fuzz_key is None or fuzz_key not in self.covmap:
+        if fuzz_key is None:
             return []
 
-        return self.covmap[fuzz_key]
+        if fuzz_key in self.covmap:
+            return self.covmap[fuzz_key]
+
+        # Handle Rust monomorphization: aggregate coverage across all generic instantiations
+        # (e.g., ryu::buffer::Buffer::format -> ryu::buffer::Buffer::format::f32) by calculating
+        # the union of unique source lines.
+        prefix = fuzz_key + "::"
+        candidates = [k for k in self.covmap if k.startswith(prefix)]
+        if candidates:
+            # Sum hits for specific line numbers across all candidates.
+            merged_coverage = {}
+
+            for cand in candidates:
+                for line_num, hit_count in self.covmap[cand]:
+                    if line_num not in merged_coverage:
+                        merged_coverage[line_num] = 0
+                    merged_coverage[line_num] += hit_count
+            logger.debug(f"Candidate hit for {fuzz_key}, summing candidates: {candidates}")
+            return sorted(merged_coverage.items())
+        return []
 
     def _python_ast_funcname_to_cov_file(self, function_name) -> Optional[str]:
         """Convert a Python module path to a given file, and searches the
@@ -381,6 +400,26 @@ class CoverageProfile:
         if fuzz_key in self.covmap:
             lines_hit = [ht for ln, ht in self.covmap[fuzz_key] if ht > 0]
             return len(self.covmap[fuzz_key]), len(lines_hit)
+
+        # Handle Rust monomorphization: aggregate coverage across all generic instantiations
+        # (e.g., ryu::buffer::Buffer::format -> ryu::buffer::Buffer::format::f32) by calculating
+        # the union of unique source lines.
+        prefix = fuzz_key + "::"
+        candidates = [k for k in self.covmap if k.startswith(prefix)]
+        if candidates:
+            # Count unique line numbers
+            unique_lines_total = set()
+            unique_lines_hit = set()
+
+            for cand in candidates:
+                for ln, ht in self.covmap[cand]:
+                    unique_lines_total.add(ln)
+                    if ht > 0:
+                        unique_lines_hit.add(ln)
+
+            logger.debug(f"Candidate match for {fuzz_key} as {cand}")
+            return len(unique_lines_total), len(unique_lines_hit)
+
         return 0, 0
 
     def is_func_lineno_hit(self, func_name: str, lineno: int) -> bool:
