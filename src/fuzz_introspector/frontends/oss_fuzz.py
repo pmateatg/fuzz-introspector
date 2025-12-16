@@ -104,7 +104,7 @@ def analyse_folder(
             entrypoint = 'LLVMFuzzerTestOneInput'
         if not project.get_source_codes_with_harnesses():
             module_only = True
-        project = frontend_rust.load_treesitter_trees(source_files)
+        #project = frontend_rust.load_treesitter_trees(source_files)
     else:
         logger.error('Unsupported language: %s', language)
         return Project([]), []

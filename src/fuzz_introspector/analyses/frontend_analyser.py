@@ -148,13 +148,16 @@ class FrontendAnalyser(analysis.AnalysisInterface):
                                 module_only=True)
 
         # Generate FI backend analysis report from second frontend run result
-        introspection_proj = analysis.IntrospectionProject(
-            proj_profile.language, basefolder, temp_dir)
-        introspection_proj.load_data_files(True, temp_dir, basefolder)
+        #introspection_proj = analysis.IntrospectionProject(
+        #    proj_profile.language, basefolder, temp_dir)
+        #introspection_proj.load_data_files(True, temp_dir, basefolder)
 
         # Calls standalone analysis
-        self.standalone_analysis(introspection_proj.proj_profile,
-                                 introspection_proj.profiles, out_dir)
+        #self.standalone_analysis(introspection_proj.proj_profile,
+        #                         introspection_proj.profiles, out_dir)
+        # TODO re-enable tree-sitter analysis
+        self.standalone_analysis(proj_profile,
+                                 profiles, out_dir)
 
         return ''
 
