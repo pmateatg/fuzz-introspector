@@ -230,7 +230,7 @@ def test_refine_functions_complex_bridging(tmpdir):
 
     # Verify main_logic metadata
     # Should include util in its reachable lists
-    demangled_util = utils.demangle_rust_func(f_util, False)
+    demangled_util = utils.demangle_rust_func(f_util, strip_hash=False)
     assert demangled_util in main_func.functions_called
     assert demangled_util in main_func.functions_reached
 

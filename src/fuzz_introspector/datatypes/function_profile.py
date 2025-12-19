@@ -33,10 +33,13 @@ class FunctionProfile:
     """
 
     def __init__(self, elem: Dict[Any, Any]) -> None:
-        self.function_name = utils.demangle_rust_func(
-            utils.demangle_cpp_func(elem['functionName']), False)
-        self.raw_function_name = elem['functionName']
         self.function_source_file = elem['functionSourceFile']
+        is_rust = self.function_source_file.endswith(".rs")
+        if is_rust:
+            self.function_name = utils.demangle_rust_func(elem['functionName'], strip_hash=False)
+        else:
+            self.function_name = utils.demangle_cpp_func(elem['functionName'])
+        self.raw_function_name = elem['functionName']
         self.linkage_type = elem['linkageType']
         self.function_linenumber = elem['functionLinenumber']
         self.function_line_number_end = elem.get('functionLinenumberEnd', -1)
@@ -49,7 +52,7 @@ class FunctionProfile:
         self.edge_count = elem['EdgeCount']
         self.cyclomatic_complexity = elem['CyclomaticComplexity']
         self.functions_reached = utils.load_func_names(
-            elem['functionsReached'], False, self.function_source_file.endswith(".rs"))
+            elem['functionsReached'], False, is_rust)
         self.function_uses = elem['functionUses']
         self.function_depth = elem['functionDepth']
         self.constants_touched = elem['constantsTouched']
@@ -62,7 +65,7 @@ class FunctionProfile:
         # could avoid loss of call tree information when functions_reached
         # is further propagated by later operations.
         self.functions_called = utils.load_func_names(elem['functionsReached'],
-                                                      False, self.function_source_file.endswith(".rs"))
+                                                      False, is_rust)
 
         # Check if this function is accessible or contains special properties and data
         # Currently, only JVM projects are using these parameters
@@ -167,8 +170,8 @@ class FunctionProfile:
 
             callsite_src = callsite['Src'].split(',')[0].replace(
                 ':', '#%s:' % self.function_name)
-            callsite_list.append(utils.demangle_rust_func(callsite_src, False))
-            cs_loaded.update({utils.demangle_rust_func(callsite['Dst'], False): callsite_list})
+            callsite_list.append(utils.demangle_rust_func(callsite_src, strip_hash=False))
+            cs_loaded.update({utils.demangle_rust_func(callsite['Dst'], strip_hash=False): callsite_list})
 
         return cs_loaded
 

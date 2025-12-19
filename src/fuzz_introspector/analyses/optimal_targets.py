@@ -72,7 +72,7 @@ def add_func_to_reached_and_clone(
 
         if merged_profile.target_lang == "rust":
             f.reached_by_fuzzers.append(
-                utils.demangle_rust_func(func_to_add.function_name, False))
+                utils.demangle_rust_func(func_to_add.function_name, strip_hash=False))
         else:
             f.reached_by_fuzzers.append(
                 utils.demangle_cpp_func(func_to_add.function_name))
@@ -333,7 +333,7 @@ class OptimalTargets(analysis.AnalysisInterface):
                                                        target_lang)
             if target_lang == "rust":
                 # Keep the hash for the html report
-                demangled = utils.demangle_rust_func(fd.function_name, False)
+                demangled = utils.demangle_rust_func(fd.function_name, strip_hash=False)
             else:
                 demangled = utils.demangle_cpp_func(fd.function_name)
             html_func_row = (

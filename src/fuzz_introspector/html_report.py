@@ -85,7 +85,7 @@ def create_all_function_table(
 
     for fd_k, fd in proj_profile.get_all_functions_with_source().items():
         if proj_profile.target_lang == "rust":
-            demangled_func_name = utils.demangle_rust_func(fd.function_name, False)
+            demangled_func_name = utils.demangle_rust_func(fd.function_name, strip_hash=False)
         else:
             demangled_func_name = utils.demangle_cpp_func(fd.function_name)
 

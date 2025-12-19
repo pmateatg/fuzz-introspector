@@ -124,9 +124,9 @@ def data_file_read_calltree(cfg_content: str) -> Optional[CalltreeCallsite]:
             space_count = len(line) - len(line.lstrip(' '))
             depth = int(space_count / 2)
 
-            # Create a callsite nide
+            # Create a callsite node
             if filename.endswith(".rs"):
-                target_func = utils.demangle_rust_func(target_func, False)
+                target_func = utils.demangle_rust_func(target_func, strip_hash=False)
             ctcs = CalltreeCallsite(target_func, filename, depth, linenumber,
                                     curr_ctcs_node)
 

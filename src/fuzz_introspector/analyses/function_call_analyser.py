@@ -234,7 +234,7 @@ class ThirdPartyAPICoverageAnalyser(analysis.AnalysisInterface):
         functions_of_interest = command_injection_sinks
         for fd in func_profile_list:
             if proj_profile.target_lang == "rust":
-                func_name = utils.demangle_rust_func(fd.function_name, False)
+                func_name = utils.demangle_rust_func(fd.function_name, strip_hash=False)
             else:
                 func_name = utils.demangle_cpp_func(fd.function_name)
 

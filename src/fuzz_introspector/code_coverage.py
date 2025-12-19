@@ -181,7 +181,7 @@ class CoverageProfile:
         elif utils.remove_jvm_generics(funcname) in self.covmap:
             fuzz_key = utils.remove_jvm_generics(funcname)
         else:
-            fuzz_key = utils.demangle_rust_func(funcname, True)
+            fuzz_key = utils.demangle_rust_func(funcname, strip_hash=True)
 
         if fuzz_key is None:
             return []
@@ -392,7 +392,7 @@ class CoverageProfile:
         elif utils.remove_jvm_generics(funcname) in self.covmap:
             fuzz_key = utils.remove_jvm_generics(funcname)
         else:
-            fuzz_key = utils.demangle_rust_func(funcname, True)
+            fuzz_key = utils.demangle_rust_func(funcname, strip_hash=True)
 
         if fuzz_key is None:
             return None, None
@@ -546,7 +546,7 @@ def load_llvm_coverage(target_dir: str,
                     else:
                         curr_func = line.replace(" ", "").replace(":", "")
                     if is_rust:
-                        curr_func = utils.demangle_rust_func(curr_func, True)
+                        curr_func = utils.demangle_rust_func(curr_func, strip_hash=True)
                     else:
                         curr_func = utils.demangle_cpp_func(curr_func)
                     cp.covmap[curr_func] = list()

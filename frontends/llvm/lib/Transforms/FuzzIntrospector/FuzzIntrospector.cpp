@@ -1055,6 +1055,22 @@ void FuzzIntrospector::extractAllFunctionDetailsToYaml(std::string nextYamlName,
       nextYamlName, EC, llvm::sys::fs::OpenFlags::OF_Append);
   yaml::Output YamlOut(*YamlStream);
 
+  // Rust Fuzzer Name Detection
+  if (FuzzerCalltree.FileName.find("libfuzzer-sys") != std::string::npos) {
+    logPrintf(L1, "Generic libfuzzer-sys wrapper detected. Searching for real Rust fuzzer source...\n");
+
+    for (auto &F : M) {
+      // Rust fuzz_target! macro is expanded into a chain starting from LLVMFuzzerTestOneInput, but only from __libfuzzer_sys_run
+      // associated with the real fuzz harness file, otherwise libfuzzer-sys crate lib.rs
+      if (F.getName().contains("__libfuzzer_sys_run")) {
+        std::string candidateFile = getFunctionFilename(&F);
+        logPrintf(L1, "Real Rust fuzzer source: %s\n", candidateFile.c_str());
+        FuzzerCalltree.FileName = candidateFile;
+        break;
+      }
+    }
+  }
+
   FuzzerModuleIntrospection fmi(FuzzerCalltree.FileName, ListWrapper);
   YamlOut << fmi;
 

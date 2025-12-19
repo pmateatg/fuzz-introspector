@@ -354,7 +354,7 @@ class FuzzerProfile:
                 self.dst_to_fd_cache[utils.demangle_jvm_func(
                     fd.function_source_file, fd.function_name)] = fd
             elif self.target_lang == "rust":
-                demangled = utils.demangle_rust_func(fd.function_name, True)
+                demangled = utils.demangle_rust_func(fd.function_name, strip_hash=True)
                 self.dst_to_fd_cache[demangled] = fd
             self.dst_to_fd_cache[utils.normalise_str(fd.function_name)] = fd
 
@@ -646,7 +646,10 @@ class FuzzerProfile:
             # Avoid loading more entrypoints as this will cause issues when
             # propagating reachability. TODO(David): make this more robust.
             if 'LLVMFuzzerTestOneInput' in func_profile.function_name:
-                if func_profile.function_source_file not in self.fuzzer_source_file:
+                if self.target_lang == "rust":
+                    # In Rust, the entrypoint is ALWAYS in libfuzzer-sys crate, and only exists at compilation time.
+                    pass
+                elif func_profile.function_source_file not in self.fuzzer_source_file:
                     continue
 
             if self.target_lang == "jvm" and "<init>" in elem['functionName']:
@@ -715,7 +718,7 @@ class FuzzerProfile:
             if node_name in cache:
                 return cache[node_name]
 
-            lookup_name = utils.demangle_rust_func(node_name, False)
+            lookup_name = utils.demangle_rust_func(node_name, strip_hash=False)
 
             # Project function
             if lookup_name in to_keep:
@@ -795,7 +798,7 @@ class FuzzerProfile:
             keep_node = (node == root)
             if not keep_node:
                 # Check if this is a project function
-                func_name = utils.demangle_rust_func(node.dst_function_name, False)
+                func_name = utils.demangle_rust_func(node.dst_function_name, strip_hash=False)
                 if func_name and func_name in self.all_class_functions:
                     keep_node = True
 

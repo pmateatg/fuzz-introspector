@@ -187,15 +187,15 @@ def demangle_rust_func(funcname: str, strip_hash: bool) -> str:
     demangled = funcname
 
     # Rust V0 mangling starts with _R, used in debug builds and coverage reports
+    # Example: _RNvNtNtCs5SWtWOkCEvM_3ryu6pretty8mantissa19write_mantissa_long
     if funcname.startswith('_R'):
         try:
-            demangled = rust_demangler.demangle(funcname.replace(' ', ''))
-            # Rust V0 mangling specific cleanup
-            demangled = demangled.replace('<', '').replace('>', '')
+            demangled = rust_demangler.demangle(funcname)
         except Exception:
             demangled = funcname
     else:
         # Legacy/C++ Itanium ABI (_ZN...), used in LLVM IR, LTO Pass export
+        # Example _ZN3ryu6pretty8mantissa19write_mantissa_long17hbac710e351b761dbE
         try:
             demangled = cxxfilt.demangle(funcname)
         except Exception:
@@ -352,7 +352,7 @@ def load_func_names(input_list: list[str],
                 and constants.BLOCKLISTED_FUNCTION_NAMES.match(reached)):
             continue
         if is_rust:
-            loaded.append(demangle_rust_func(reached, False))
+            loaded.append(demangle_rust_func(reached, strip_hash=False))
         else:
             loaded.append(demangle_cpp_func(reached))
     return loaded
