@@ -15,6 +15,7 @@
 
 import os
 import logging
+import re
 
 from typing import (
     Any,
@@ -31,6 +32,9 @@ from fuzz_introspector.exceptions import DataLoaderError
 
 logger = logging.getLogger(name=__name__)
 
+# Regex for LTO profiles, format hardcoded in the LLVM pass
+# Matches: fuzzerLogFile-0-HEsvd7kJ4k.data.yaml
+LTO_PATTERN = re.compile(r"fuzzerLogFile-[0-9]+-[a-zA-Z0-9]+\.data")
 
 class FuzzerProfile:
     """
@@ -85,6 +89,15 @@ class FuzzerProfile:
             self.collapse_calltree_to_project_only()
         self.dst_to_fd_cache: Dict[str,
                                    function_profile.FunctionProfile] = dict()
+
+        # Allow differentiation between profiles from different sources
+        basename = os.path.basename(self.introspector_data_file)
+        if LTO_PATTERN.search(basename):
+            self.type = "lto"
+        elif basename.startswith("fuzzerLogFile-"):
+            self.type = "treesitter"
+        else:
+            self.type = "unknown"
 
     @property
     def target_lang(self):
@@ -684,6 +697,7 @@ class FuzzerProfile:
         if "/cargo/registry/" in src: return False   # External Crates
         if "/rust/registry/" in src: return False    # CI/Docker specific registry path
         if "/src/rust/library/" in src: return False # Source built Rust Std Lib
+        if "/src/target/" in src: return False       # Cranelift generated source files
 
         return True
 

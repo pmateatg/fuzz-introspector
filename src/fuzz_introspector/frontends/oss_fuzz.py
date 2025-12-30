@@ -148,7 +148,7 @@ def analyse_folder(
 
     # Process calltree and method data
     for harness in project.get_source_codes_with_harnesses():
-        if language == 'go':
+        if language in ['go', 'rust']:
             entry_function = harness.get_entry_function_name()
         else:
             entry_function = entrypoint

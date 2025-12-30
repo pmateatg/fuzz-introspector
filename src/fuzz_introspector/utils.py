@@ -609,3 +609,32 @@ def detect_language(directory) -> str:
             max_count = count
             max_lang = language
     return max_lang
+
+def normalise_rust_name(name: str) -> str:
+    """
+    Normalizes a Rust function name by stripping generics and hashes for fuzzy matching with TreeSitter
+    """
+    name = re.sub(r'::h[0-9a-fA-F]+$', '', name)
+    name = re.sub(r'<.*?>', '', name)
+    name = name.replace("::::", "::")
+
+    return name
+
+def locate_rust_fuzz_key(ts_funcname: str, lto_function_map: dict[str, Any]) -> Optional[str]:
+    """
+    Finds the Rust LTO key that corresponds to a TreeSitter name.
+    """
+    clean_ts = normalise_rust_name(ts_funcname)
+
+    # Fast path: Exact match
+    if ts_funcname in lto_function_map:
+        return ts_funcname
+
+    # Suffix match: Iterate LTO keys to find one that ends with the TS name
+    for lto_key in lto_function_map:
+        clean_lto = normalise_rust_name(lto_key)
+
+        if clean_lto.endswith(clean_ts):
+            return lto_key
+
+    return None

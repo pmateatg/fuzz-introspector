@@ -211,7 +211,8 @@ class OptimalTargets(analysis.AnalysisInterface):
         if fd.total_cyclomatic_complexity < 20:
             return False
 
-        if fd.bb_count <= 1:
+        # Keep high binary footprint OR high source complexity
+        if fd.bb_count <= 1 and fd.total_cyclomatic_complexity < 20:
             return False
 
         if fd.new_unreached_complexity < 35:
