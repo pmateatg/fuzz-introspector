@@ -74,7 +74,8 @@ def read_fuzzer_data_file_to_profile(
     profile = fuzzer_profile.FuzzerProfile(cfg_file,
                                            data_dict_yaml,
                                            language,
-                                           cfg_content=cfg_content)
+                                           cfg_content=cfg_content,
+                                           project_graph_only=(language == "rust"))
 
     if not profile.has_entry_point():
         logger.info("Found no entrypoints")
@@ -139,7 +140,7 @@ def load_all_profiles(
 
     profiles = []
     data_files = utils.get_all_files_in_tree_with_regex(
-        target_folder, "fuzzerLogFile.*\.data$")
+        target_folder, r"fuzzerLogFile.*\.data$")
     data_files.extend(
         utils.get_all_files_in_tree_with_regex(target_folder,
                                                "fuzzer-calltree-*"))

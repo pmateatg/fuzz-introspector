@@ -48,13 +48,13 @@ class BranchProfile:
         self.branch_pos = str()
         self.sides: List[BranchSide] = []
 
-    def assign_from_yaml_elem(self, elem: Dict[Any, Any]) -> None:
+    def assign_from_yaml_elem(self, elem: Dict[Any, Any], is_rust = False) -> None:
         # This skips the path, as it may cause incosistancy vs coverage file names path
         self.branch_pos = elem['Branch String'].split('/')[-1]
         for br_side_elem in elem['Branch Sides']:
             bs = BranchSide()
             bs.pos = br_side_elem['BranchSide']
-            bs.funcs = utils.load_func_names(br_side_elem['BranchSideFuncs'])
+            bs.funcs = utils.load_func_names(br_side_elem['BranchSideFuncs'], is_rust)
             self.sides.append(bs)
 
     def assign_from_coverage(self, counts: List[str]) -> None:

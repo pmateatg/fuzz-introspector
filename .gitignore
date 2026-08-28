@@ -1,6 +1,7 @@
 build/
 venv/
 .venv/
+.vscode/
 tmp
 *.swp
 *.out

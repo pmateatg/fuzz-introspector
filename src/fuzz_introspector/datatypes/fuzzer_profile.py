@@ -15,6 +15,7 @@
 
 import os
 import logging
+import re
 
 from typing import (
     Any,
@@ -31,6 +32,9 @@ from fuzz_introspector.exceptions import DataLoaderError
 
 logger = logging.getLogger(name=__name__)
 
+# Regex for LTO profiles, format hardcoded in the LLVM pass
+# Matches: fuzzerLogFile-0-HEsvd7kJ4k.data.yaml
+LTO_PATTERN = re.compile(r"fuzzerLogFile-[0-9]+-[a-zA-Z0-9]+\.data")
 
 class FuzzerProfile:
     """
@@ -43,7 +47,8 @@ class FuzzerProfile:
                  cfg_file: str,
                  frontend_yaml: Dict[Any, Any],
                  target_lang: str = "c-cpp",
-                 cfg_content='') -> None:
+                 cfg_content='',
+                 project_graph_only = False) -> None:
         # Defaults
         self.binary_executable: str = ""
         self.file_targets: Dict[str, Set[str]] = dict()
@@ -59,10 +64,6 @@ class FuzzerProfile:
 
         self.functions_reached_by_fuzzer: List[str] = []
         self.functions_reached_by_fuzzer_runtime: List[str] = []
-
-        # Load calltree file
-        self.fuzzer_callsite_calltree = cfg_load.data_file_read_calltree(
-            cfg_content)
 
         # Read yaml data (as dictionary) from frontend
         try:
@@ -80,9 +81,23 @@ class FuzzerProfile:
         if target_lang == 'jvm' or target_lang == 'go':
             self.entrypoint_method = frontend_yaml.get('Fuzzing method', '')
 
-        self._set_function_list(frontend_yaml)
+        self._set_function_list(frontend_yaml, project_graph_only)
+        # Load calltree file
+        self.fuzzer_callsite_calltree = cfg_load.data_file_read_calltree(
+            cfg_content)
+        if project_graph_only:
+            self.collapse_calltree_to_project_only()
         self.dst_to_fd_cache: Dict[str,
                                    function_profile.FunctionProfile] = dict()
+
+        # Allow differentiation between profiles from different sources
+        basename = os.path.basename(self.introspector_data_file)
+        if LTO_PATTERN.search(basename):
+            self.type = "lto"
+        elif basename.startswith("fuzzerLogFile-"):
+            self.type = "treesitter"
+        else:
+            self.type = "unknown"
 
     @property
     def target_lang(self):
@@ -97,7 +112,7 @@ class FuzzerProfile:
         ep_env = os.environ.get('FI_ENTRYPOINT', None)
         if ep_env:
             return ep_env
-        if self.target_lang == "c-cpp":
+        if self.target_lang == "c-cpp" or self.target_lang == "rust":
             return "LLVMFuzzerTestOneInput"
         elif self.target_lang == "python":
             return self.entrypoint_fun
@@ -113,12 +128,6 @@ class FuzzerProfile:
             else:
                 # Backward compatible for old Soot frontend
                 return f"[{cname}].{mname}"
-        elif self.target_lang == "rust":
-            # For rust, there is no entry function
-            # Instead, it is wrapped by the fuzz_target
-            # macro and we manually considered it as
-            # function in the frontend.
-            return "fuzz_target"
         elif self.target_lang == "go":
             return self.entrypoint_method
         else:
@@ -141,7 +150,8 @@ class FuzzerProfile:
                 ".java", "")
 
         elif self._target_lang == "rust":
-            return os.path.basename(self.fuzzer_source_file).replace(".rs", "")
+            return os.path.basename(self.fuzzer_source_file).replace(
+                ".rs", "")
 
         elif self._target_lang == "go":
             fuzzer_base_name = os.path.basename(self.fuzzer_source_file)
@@ -353,8 +363,12 @@ class FuzzerProfile:
 
     def _set_fd_cache(self):
         for _, fd in self.all_class_functions.items():
-            self.dst_to_fd_cache[utils.demangle_jvm_func(
-                fd.function_source_file, fd.function_name)] = fd
+            if self.target_lang == "jvm":
+                self.dst_to_fd_cache[utils.demangle_jvm_func(
+                    fd.function_source_file, fd.function_name)] = fd
+            elif self.target_lang == "rust":
+                demangled = utils.demangle_rust_func(fd.function_name, strip_hash=True)
+                self.dst_to_fd_cache[demangled] = fd
             self.dst_to_fd_cache[utils.normalise_str(fd.function_name)] = fd
 
     def accummulate_profile(self, target_folder: str, return_dict: None,
@@ -630,7 +644,7 @@ class FuzzerProfile:
             except Exception as e:
                 logger.debug(e)
 
-    def _set_function_list(self, frontend_yaml: Dict[Any, Any]) -> None:
+    def _set_function_list(self, frontend_yaml: Dict[Any, Any], project_graph_only) -> None:
         """Read all function field from yaml data dictionary into
         instances of FunctionProfile
         """
@@ -645,7 +659,10 @@ class FuzzerProfile:
             # Avoid loading more entrypoints as this will cause issues when
             # propagating reachability. TODO(David): make this more robust.
             if 'LLVMFuzzerTestOneInput' in func_profile.function_name:
-                if func_profile.function_source_file not in self.fuzzer_source_file:
+                if self.target_lang == "rust":
+                    # In Rust, the entrypoint is ALWAYS in libfuzzer-sys crate, and only exists at compilation time.
+                    pass
+                elif func_profile.function_source_file not in self.fuzzer_source_file:
                     continue
 
             if self.target_lang == "jvm" and "<init>" in elem['functionName']:
@@ -656,6 +673,8 @@ class FuzzerProfile:
                 # Store the functions
                 self.all_class_functions[
                     func_profile.function_name] = func_profile
+        if project_graph_only:
+            self.refine_functions_to_project_only()
 
     def _is_func_name_missing_normalisation(self, func_name: str) -> bool:
         if "." in func_name:
@@ -663,3 +682,163 @@ class FuzzerProfile:
             if split_name[-1].isnumeric():
                 return True
         return False
+
+    def is_project_function(self, func) -> bool:
+        """
+        Returns True if the function belongs to the project source code,
+        filtering out standard libraries, registries, and system headers.
+        """
+        src = func.function_source_file
+        if not src:
+            return False
+
+        # Rust Specific Exclusions
+        if "libfuzzer-sys" in src: return True       # Keep the Rust fuzzer functions
+        if "/cargo/registry/" in src: return False   # External Crates
+        if "/rust/registry/" in src: return False    # CI/Docker specific registry path
+        if "/src/rust/library/" in src: return False # Source built Rust Std Lib
+        if "/rustc/" in src: return False            # Toolchain standard library sources
+        if "/target/" in src and ("/build/" in src or "/debug/" in src or "/release/" in src):
+            return False                             # Generated files from build scripts (e.g. build.rs)
+
+        return True
+
+    def refine_functions_to_project_only(self):
+        """
+        Graph Contraction Algorithm:
+        Collapses the call graph to only include project functions.
+        Rewires UserA -> Lib -> UserB to UserA -> UserB.
+        """
+        logger.info("Refining functions to project only")
+
+        to_keep = set()
+        to_remove = set()
+        for func_name, func in self.all_class_functions.items():
+            if self.is_project_function(func) or func_name == self.entrypoint_function:
+                to_keep.add(func_name)
+            else:
+                to_remove.add(func_name)
+
+        if not to_remove:
+            return
+
+        # func_name -> set of reachable project functions (real_dsts)
+        cache = {}
+
+        def get_project_targets(start_node):
+            if start_node in cache:
+                return cache[start_node]
+
+            lookup_name = utils.demangle_rust_func(start_node, strip_hash=False)
+            if lookup_name in to_keep:
+                return {start_node}
+
+            targets = set()
+            stack = [start_node]
+            visited = set()
+
+            while stack:
+                curr = stack.pop()
+                if curr in visited:
+                    continue
+                visited.add(curr)
+
+                if curr in cache:
+                    targets.update(cache[curr])
+                    continue
+
+                curr_lookup = utils.demangle_rust_func(curr, strip_hash=False)
+                if curr_lookup in to_keep:
+                    targets.add(curr)
+                    continue
+
+                if curr_lookup in self.all_class_functions:
+                    func_obj = self.all_class_functions[curr_lookup]
+                    for sub_dst in func_obj.callsite:
+                        if sub_dst not in visited:
+                            stack.append(sub_dst)
+
+            cache[start_node] = targets
+            return targets
+
+        # Rewrite Edges
+        for func_name in to_keep:
+            func = self.all_class_functions[func_name]
+            new_callsites = {}
+
+            # For every original call, find where it effectively lands
+            for dst_name, locations in func.callsite.items():
+
+                # Start traversal from the destination
+                resolved_dsts = get_project_targets(dst_name)
+
+                for real_dst in resolved_dsts:
+                    if real_dst not in new_callsites:
+                        new_callsites[real_dst] = set()
+
+                    # Preserve original source locations
+                    new_callsites[real_dst].update(locations)
+
+            # Convert location sets back to lists for the final object
+            func.callsite = {dst: list(locs) for dst, locs in new_callsites.items()}
+
+            # We can rebuild these lists directly from the keys of our new map
+            func.functions_called = []
+            func.functions_reached = []
+
+            for dst in func.callsite:
+                func.functions_called.append(dst)
+                func.functions_reached.append(dst)
+
+        # 5. Bulk Deletion
+        for func_name in to_remove:
+            self.all_class_functions.pop(func_name, None)
+
+    def collapse_calltree_to_project_only(self):
+        """
+        Refines the calltree in-place to include only project functions.
+        Non-project nodes are dissolved, and their children are adopted by the nearest
+        ancestor project node.
+        """
+        logger.info("Collapsing calltree")
+        root = self.fuzzer_callsite_calltree
+        if not root:
+            return
+
+        def traverse_and_collapse(node):
+            # Recursively process children (Bottom-Up)
+            # Collect all surviving descendants from the subtree
+            kept_children = []
+            for child in node.children:
+                kept_children.extend(traverse_and_collapse(child))
+
+            node.children = kept_children
+
+            # Keep this node or dissolve, while Root is always kept.
+            keep_node = (node == root)
+            if not keep_node:
+                # Check if this is a project function
+                func_name = utils.demangle_rust_func(node.dst_function_name, strip_hash=False)
+                if func_name and func_name in self.all_class_functions:
+                    keep_node = True
+
+            if keep_node:
+                # Rewrite ancestry when kept
+                for child in node.children:
+                    child.parent_calltree_callsite = node
+                    child.src_function_name = node.dst_function_name
+                return [node]
+            else:
+                # Dissolve node: hoist children up to the grandparent
+                return node.children
+
+        traverse_and_collapse(root)
+
+        # Fix Depths (Top-Down)
+        # Necessary because hoisting invalidates original depths
+        def fix_depth(node, current_depth):
+            node.depth = current_depth
+            for child in node.children:
+                fix_depth(child, current_depth + 1)
+
+        fix_depth(root, 0)
