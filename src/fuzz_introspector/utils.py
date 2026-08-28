@@ -151,21 +151,61 @@ def demangle_cpp_func(funcname: str) -> str:
     except Exception:
         return funcname
 
+def normalize_rust_llvm_signature(signature):
+    """Converts raw LLVM/Rust symbols which are in C++ ABI format into canonical
+    form for matching."""
 
-def demangle_rust_func(funcname: str) -> str:
+    sig = signature.replace("$LT$", "<") \
+                    .replace("$GT$", ">") \
+                    .replace("$u20$", " ") \
+                    .replace("$u7b$", "{") \
+                    .replace("$u7d$", "}") \
+                    .replace("$RF$", "&") \
+                    .replace("$u21$", "!") \
+                    .replace("$u5b$", "[") \
+                    .replace("$u5d$", "]") \
+                    .replace("$LP$", "(") \
+                    .replace("$RP$", ")") \
+                    .replace("$BP$", "*") \
+                    .replace("$C$", ",") \
+                    .replace("..", "::")
+
+    # Handles 'impl' syntax and formats it as the
+    # demangled coverage report functions look like
+    # From: module::_<impl Trait for Type>::method
+    # To:   Type as Trait::method
+    match = re.search(r'_<impl (.*?) for (.*?)>::(.*)', sig)
+    if match:
+        trait = match.group(1)
+        type_name = match.group(2)
+        method = match.group(3)
+        return f"{type_name} as {trait}::{method}"
+    return sig
+
+def demangle_rust_func(funcname: str, strip_hash: bool) -> str:
     """Demangle the mangled rust function names."""
-    # Ignore all non-mangled rust function names
-    # All mangled rust function names started with _R
-    if not funcname.startswith('_R'):
-        return funcname
+    demangled = funcname
 
-    try:
-        demangled: str = rust_demangler.demangle(funcname.replace(' ', ''))
-        demangled = demangled.replace('<', '').replace('>', '')
-        return demangled
-    except Exception:
-        return funcname
+    # Rust V0 mangling starts with _R, used in debug builds and coverage reports
+    # Example: _RNvNtNtCs5SWtWOkCEvM_3ryu6pretty8mantissa19write_mantissa_long
+    if funcname.startswith('_R'):
+        try:
+            demangled = rust_demangler.demangle(funcname)
+        except Exception:
+            demangled = funcname
+    else:
+        # Legacy/C++ Itanium ABI (_ZN...), used in LLVM IR, LTO Pass export
+        # Example _ZN3ryu6pretty8mantissa19write_mantissa_long17hbac710e351b761dbE
+        try:
+            demangled = cxxfilt.demangle(funcname)
+        except Exception:
+            pass
+        demangled = normalize_rust_llvm_signature(demangled)
 
+    if strip_hash:
+        demangled = re.sub(r'::h[0-9a-fA-F]+$', '', demangled)
+
+    return demangled
 
 def demangle_jvm_func(package: str, funcname: str) -> str:
     """Add package class name to uniquly identify jvm functons"""
@@ -285,7 +325,7 @@ def get_target_coverage_url(coverage_url: str, target_name: str,
     """
     logger.info('Extracting coverage for %s -- %s', coverage_url, target_name)
     if os.environ.get('FUZZ_INTROSPECTOR'):
-        if target_lang == 'c-cpp':
+        if target_lang in ['c-cpp', 'rust']:
             return coverage_url.replace('reports',
                                         'reports-by-target').replace(
                                             '/linux', f'/{target_name}/linux')
@@ -300,7 +340,8 @@ def get_target_coverage_url(coverage_url: str, target_name: str,
 
 
 def load_func_names(input_list: list[str],
-                    check_for_blocking: bool = True) -> list[str]:
+                    check_for_blocking: bool = True,
+                    is_rust = False) -> list[str]:
     """
     Takes a list of function names (typically from llvm profile)
     and makes sure the output names are demangled.
@@ -310,7 +351,10 @@ def load_func_names(input_list: list[str],
         if (check_for_blocking
                 and constants.BLOCKLISTED_FUNCTION_NAMES.match(reached)):
             continue
-        loaded.append(demangle_rust_func(demangle_cpp_func(reached)))
+        if is_rust:
+            loaded.append(demangle_rust_func(reached, strip_hash=False))
+        else:
+            loaded.append(demangle_cpp_func(reached))
     return loaded
 
 
@@ -540,46 +584,6 @@ def copy_source_files(required_class_list: list[str],
         logger.debug('Language: %s not support. Skipping source file copy.',
                      language)
 
-
-def locate_rust_fuzz_key(funcname: str, fuzz_map: dict[str,
-                                                       Any]) -> Optional[str]:
-    """Helper method for locating rust fuzz key with missing crate
-    information."""
-
-    while funcname:
-        match = next((key for key in fuzz_map if key.endswith(funcname)), None)
-        # Ensure the matched key contains crate information which is
-        # unique for rust
-        if match and '::' in match:
-            return match
-
-        if '::' in funcname:
-            funcname = funcname.split('::', 1)[1]
-        else:
-            break
-
-    return None
-
-
-def locate_rust_fuzz_item(funcname: str, item_list: list[str]) -> str:
-    """Helper method for locating str item with missing crate information."""
-
-    if funcname in item_list:
-        return funcname
-
-    while funcname:
-        for item in item_list:
-            if item.endswith(funcname) and '::' in item:
-                return item
-
-        if '::' in funcname:
-            funcname = funcname.split('::', 1)[1]
-        else:
-            break
-
-    return ''
-
-
 def detect_language(directory) -> str:
     """Given a folder finds the likely programming language of the project"""
 
@@ -605,3 +609,49 @@ def detect_language(directory) -> str:
             max_count = count
             max_lang = language
     return max_lang
+
+def normalise_rust_name(name: str) -> str:
+    """
+    Normalizes a Rust function name by stripping generics and hashes for fuzzy matching with TreeSitter
+    """
+    name = re.sub(r'::h[0-9a-fA-F]+$', '', name)
+    name = re.sub(r'<.*?>', '', name)
+    name = name.replace("::::", "::")
+
+    return name
+
+def build_rust_lto_suffix_index(lto_function_map: dict[str, Any]) -> dict[str, str]:
+    """Precomputes a suffix lookup index from normalized LTO function names for O(1) matching."""
+    index: dict[str, str] = {}
+    for lto_key in lto_function_map:
+        clean_lto = normalise_rust_name(lto_key)
+        index[clean_lto] = lto_key
+        parts = clean_lto.split("::")
+        for i in range(len(parts)):
+            suffix = "::".join(parts[i:])
+            if suffix not in index:
+                index[suffix] = lto_key
+    return index
+
+def locate_rust_fuzz_key(ts_funcname: str,
+                         lto_function_map: dict[str, Any],
+                         suffix_index: Optional[dict[str, str]] = None) -> Optional[str]:
+    """
+    Finds the Rust LTO key that corresponds to a TreeSitter name.
+    """
+    # Fast path: Exact match
+    if ts_funcname in lto_function_map:
+        return ts_funcname
+
+    clean_ts = normalise_rust_name(ts_funcname)
+    if suffix_index is not None:
+        return suffix_index.get(clean_ts)
+
+    # Suffix match: Iterate LTO keys to find one that ends with the TS name
+    for lto_key in lto_function_map:
+        clean_lto = normalise_rust_name(lto_key)
+
+        if clean_lto.endswith(clean_ts):
+            return lto_key
+
+    return None
