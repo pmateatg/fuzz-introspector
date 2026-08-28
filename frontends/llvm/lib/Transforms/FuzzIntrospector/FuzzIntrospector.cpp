@@ -25,6 +25,8 @@
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
@@ -53,6 +55,7 @@
 #include "llvm/InitializePasses.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Utils/CallGraphUpdater.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
 
 using namespace std;
 using namespace llvm;
@@ -145,6 +148,27 @@ typedef struct BranchSidesComplexity {
       : TrueSideString(TS), TrueSideComp(TC), FalseSideString(FS),
         FalseSideComp(FC) {}
 } BranchSidesComplexity;
+
+typedef struct AlwaysQuotedString {
+  std::string &Storage;
+  explicit AlwaysQuotedString(std::string &S) : Storage(S) {}
+};
+
+template <> struct yaml::ScalarTraits<AlwaysQuotedString> {
+  static void output(const AlwaysQuotedString &S, void *Ctx, raw_ostream &OS) {
+    OS << S.Storage;
+  }
+
+  static StringRef input(StringRef Scalar, void *Ctx, AlwaysQuotedString &S) {
+    S.Storage = Scalar.str();
+    return StringRef();
+  }
+
+  static QuotingType mustQuote(StringRef) {
+    return QuotingType::Double;
+  }
+};
+
 
 // YAML mappings for outputting the typedefs above
 template <> struct yaml::MappingTraits<FuzzerFunctionWrapper> {
@@ -286,10 +310,15 @@ typedef struct FunctionDebugWrapperS {
 
 template <> struct yaml::MappingTraits<FunctionDebugWrapper> {
   static void mapping(IO &io, FunctionDebugWrapper &fw) {
-    io.mapRequired("name", fw.funcName);
+    // Ensure function names are always quoted which forces pyyaml to treat them as strings
+    // https://github.com/yaml/pyyaml/issues/613
+    AlwaysQuotedString QuotedName(fw.funcName);
+    AlwaysQuotedString QuotedRawName(fw.rawName);
+
+    io.mapRequired("name", QuotedName);
     io.mapRequired("file_location", fw.fileLocation);
     io.mapRequired("type_arguments", fw.argTypes);
-    io.mapRequired("raw_name", fw.rawName);
+    io.mapRequired("raw_name", QuotedRawName);
     io.mapRequired("is_public", fw.isPublic);
     io.mapRequired("is_private", fw.isPrivate);
   }
@@ -880,6 +909,7 @@ void FuzzIntrospector::makeDefaultConfig() {
       "llvm[.]",
       "sanitizer_cov",
       "sancov[.]module",
+      "__fuzz_introspector_keep_alive",	// FuzzIntrospector association internals
   };
 
   std::vector<string> *current = &ConfigFuncsToAvoid;
@@ -971,6 +1001,17 @@ bool FuzzIntrospector::runOnModule(Module &M) {
                          FuzzIntrospectorTag, "FuzzIntrospectorTag");
   GV->setInitializer(FuzzIntrospectorTag);
 
+  // Create a function that will be a global constructor to avoid Rust aggressively
+  // stripping the unused global variable away
+  FunctionType *FT = FunctionType::get(Type::getVoidTy(M.getContext()), false);
+  Function *F = Function::Create(FT, GlobalValue::InternalLinkage,
+		  "__fuzz_introspector_keep_alive", &M);
+  BasicBlock *BB = BasicBlock::Create(M.getContext(), "entry", F);
+  IRBuilder<> Builder(BB);
+  Builder.CreateLoad(GV->getValueType(), GV, true, "volatile_read");
+  Builder.CreateRetVoid();
+  llvm::appendToGlobalCtors(M, F, 0);
+
   extractFuzzerReachabilityGraph(M, "LLVMFuzzerTestOneInput");
   dumpCalltree(&FuzzerCalltree, nextCalltreeFile);
 
@@ -1013,6 +1054,22 @@ void FuzzIntrospector::extractAllFunctionDetailsToYaml(std::string nextYamlName,
   auto YamlStream = std::make_unique<raw_fd_ostream>(
       nextYamlName, EC, llvm::sys::fs::OpenFlags::OF_Append);
   yaml::Output YamlOut(*YamlStream);
+
+  // Rust Fuzzer Name Detection
+  if (FuzzerCalltree.FileName.find("libfuzzer-sys") != std::string::npos) {
+    logPrintf(L1, "Generic libfuzzer-sys wrapper detected. Searching for real Rust fuzzer source...\n");
+
+    for (auto &F : M) {
+      // Rust fuzz_target! macro is expanded into a chain starting from LLVMFuzzerTestOneInput, but only from __libfuzzer_sys_run
+      // associated with the real fuzz harness file, otherwise libfuzzer-sys crate lib.rs
+      if (F.getName().contains("__libfuzzer_sys_run")) {
+        std::string candidateFile = getFunctionFilename(&F);
+        logPrintf(L1, "Real Rust fuzzer source: %s\n", candidateFile.c_str());
+        FuzzerCalltree.FileName = candidateFile;
+        break;
+      }
+    }
+  }
 
   FuzzerModuleIntrospection fmi(FuzzerCalltree.FileName, ListWrapper);
   YamlOut << fmi;
