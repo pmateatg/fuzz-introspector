@@ -104,7 +104,7 @@ class PublicCandidateAnalyser(analysis.AnalysisInterface):
         ]
 
         if self.dump_files:
-            result_json_path = os.path.join(out_dir, 'result.json')
+            result_json_path = os.path.join(out_dir, 'public_candidates.json')
             logger.info('Found %d function candidiates.', len(result_list))
             logger.info('Dumping result to %s', result_json_path)
             with open(result_json_path, 'w') as f:

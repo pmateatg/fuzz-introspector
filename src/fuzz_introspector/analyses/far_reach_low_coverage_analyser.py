@@ -186,7 +186,7 @@ class FarReachLowCoverageAnalyser(analysis.AnalysisInterface):
 
         self.json_results['functions'] = result_list
         if self.dump_files:
-            result_json_path = os.path.join(out_dir, 'result.json')
+            result_json_path = os.path.join(out_dir, 'far_reach_low_cov.json')
             logger.info('Found %d function candidiates.', len(result_list))
             logger.info('Dumping result to %s', result_json_path)
             with open(result_json_path, 'w') as f:
