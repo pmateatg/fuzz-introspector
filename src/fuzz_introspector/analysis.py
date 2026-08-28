@@ -417,7 +417,7 @@ def get_url_to_cov_report(profile, node, target_coverage_url):
     dst_options = [
         node.dst_function_name,
         utils.demangle_cpp_func(node.dst_function_name),
-        utils.demangle_rust_func(node.dst_function_name),
+        utils.demangle_rust_func(node.dst_function_name, strip_hash=False),
         utils.demangle_jvm_func(node.dst_function_source_file,
                                 node.dst_function_name)
     ]
@@ -450,7 +450,7 @@ def get_parent_callsite_link(node, callstack, profile, target_coverage_url):
         dst_options = [
             parent_fname,
             utils.demangle_cpp_func(parent_fname),
-            utils.demangle_rust_func(parent_fname),
+            utils.demangle_rust_func(parent_fname, strip_hash=False),
         ]
         for dst in dst_options:
             # First try the cache
@@ -474,38 +474,65 @@ def get_parent_callsite_link(node, callstack, profile, target_coverage_url):
     return "#"
 
 
+def propagate_hit_upwards(node: cfg_load.CalltreeCallsite, profile: project_profile.MergedProjectProfile) -> bool:
+    """
+    Recursively checks children. If any child is covered, mark this node
+    as covered too. Back-propagates coverage for uninstrumented wrappers/libraries.
+    """
+    is_child_hit = any([propagate_hit_upwards(c, profile) for c in node.children])
+
+    # Already covered, pass True up the chain
+    if node.cov_hitcount > 0:
+        return True
+
+    # Neither the node nor it's children were covered
+    if not is_child_hit:
+        return False
+
+    # Children were covered, but node not (e.g., wrapper/std lib)
+    node.cov_hitcount = 200
+    node.cov_color = get_hit_count_color(node.cov_hitcount)
+
+    func_name = node.src_function_name
+    if profile.target_lang == "rust":
+        lookup_key = utils.demangle_rust_func(func_name, strip_hash=False)
+        covmap_key = utils.demangle_rust_func(func_name, strip_hash=True)
+    else:
+        lookup_key = utils.demangle_cpp_func(func_name)
+        covmap_key = lookup_key
+
+    # Update Global Function Stats (Static Reachability)
+    if lookup_key in profile.all_functions:
+        fd = profile.all_functions[lookup_key]
+        fd.reached_by_fuzzers_runtime = True
+        if fd.hitcount == 0:
+            fd.hitcount = 1
+
+    # Update Runtime Coverage Map (Runtime reachability)
+    if covmap_key not in profile.runtime_coverage.covmap:
+        profile.runtime_coverage.covmap[covmap_key] = [(1, 1)]
+        logger.debug(f"Marked {covmap_key} as covered in runtime")
+
+    return True
+
+
 def overlay_calltree_with_coverage(
         profile: fuzzer_profile.FuzzerProfile,
         proj_profile: project_profile.MergedProjectProfile, coverage_url: str,
         basefolder: str, out_dir) -> None:
-    # We use the callstack to keep track of all function parents. We need this
-    # when looking up if a callsite was hit or not. This is because the coverage
-    # information about a callsite is located in coverage data of the function
-    # in which the callsite is placed.
-    callstack: Dict[int, str] = {}
-
-    if profile.coverage is None:
-        return
+    # We use a helper function to recursively traverse nodes
+    target_coverage_url = utils.get_target_coverage_url(
+        coverage_url, profile.identifier, profile.target_lang)
 
     is_first = True
-    ct_idx = 0
-    if profile.fuzzer_callsite_calltree is None:
-        return
-
-    target_name = profile.identifier
-    target_coverage_url = utils.get_target_coverage_url(
-        coverage_url, target_name, profile.target_lang)
-    logger.info("Using coverage url: %s", target_coverage_url)
+    callstack = dict()
     for node in cfg_load.extract_all_callsites(
             profile.fuzzer_callsite_calltree):
-        node.cov_ct_idx = ct_idx
-        ct_idx += 1
-
         if profile.target_lang == "jvm":
             demangled_name = utils.demangle_jvm_func(
                 node.dst_function_source_file, node.dst_function_name)
         elif profile.target_lang == "rust":
-            demangled_name = utils.demangle_rust_func(node.dst_function_name)
+            demangled_name = utils.demangle_rust_func(node.dst_function_name, strip_hash=True)
         else:
             demangled_name = utils.demangle_cpp_func(node.dst_function_name)
 
@@ -525,18 +552,10 @@ def overlay_calltree_with_coverage(
                                               target_coverage_url)
         node.cov_callsite_link = get_parent_callsite_link(
             node, callstack, profile, target_coverage_url)
-    # For python, do a hack where we check if any node is covered, and, if so,
+    # Do a hack where we check if any node is covered, and, if so,
     # ensure the entrypoint is covered.
     logger.info("Overlaying 2")
-    all_nodes = cfg_load.extract_all_callsites(
-        profile.fuzzer_callsite_calltree)
-    if len(all_nodes) > 0:
-        for node in cfg_load.extract_all_callsites(
-                profile.fuzzer_callsite_calltree)[1:]:
-            if node.cov_hitcount > 0:
-                all_nodes[0].cov_hitcount = 200
-                all_nodes[0].cov_color = get_hit_count_color(200)
-                break
+    propagate_hit_upwards(profile.fuzzer_callsite_calltree, proj_profile)
 
     # Extract data about which nodes unlocks data
     logger.info("Overlaying 3")
@@ -804,7 +823,7 @@ def detect_branch_level_blockers(
 def extract_namespace(mangled_function_name, return_type=None):
     # logger.info("Demangling: %s" % (mangled_function_name))
     demangled_func_name = utils.demangle_rust_func(
-        utils.demangle_cpp_func(mangled_function_name))
+        utils.demangle_cpp_func(mangled_function_name), strip_hash=False)
     # logger.info("Demangled name: %s" % (demangled_func_name))
     if return_type is not None and demangled_func_name.startswith(
             f"{return_type} "):
