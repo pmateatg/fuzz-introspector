@@ -18,6 +18,7 @@ import sys
 import json
 import logging
 import re
+import collections
 
 from typing import (
     Any,
@@ -60,8 +61,10 @@ class CoverageProfile:
 
     def __init__(self) -> None:
         self.covmap: Dict[str, List[Tuple[int, int]]] = dict()
-        self.file_map: Dict[str, List[Tuple[int, int]]] = dict()
-        self.branch_cov_map: Dict[str, List[int]] = dict()
+        self.file_map = dict()
+        self.covmap = dict()
+        self.branch_cov_map = dict()
+        self._generic_prefix_index = None
         self._cov_type = ""
         self.coverage_files: List[str] = []
         self.dual_file_map: Dict[str, Dict[str, List[int]]] = dict()
@@ -181,14 +184,44 @@ class CoverageProfile:
         elif utils.remove_jvm_generics(funcname) in self.covmap:
             fuzz_key = utils.remove_jvm_generics(funcname)
         else:
-            # Handle special case for rust where crate is missing from function name
-            fuzz_key = utils.locate_rust_fuzz_key(
-                utils.demangle_rust_func(funcname), self.covmap)
+            fuzz_key = utils.demangle_rust_func(funcname, strip_hash=True)
 
-        if fuzz_key is None or fuzz_key not in self.covmap:
+        if fuzz_key is None:
             return []
 
-        return self.covmap[fuzz_key]
+        if fuzz_key in self.covmap:
+            return self.covmap[fuzz_key]
+
+        # Handle Rust monomorphization: aggregate coverage across all generic instantiations
+        # (e.g., ryu::buffer::Buffer::format -> ryu::buffer::Buffer::format::f32) by calculating
+        # the union of unique source lines.
+        candidates = self._get_generic_candidates(fuzz_key)
+        if candidates:
+            # Sum hits for specific line numbers across all candidates.
+            merged_coverage = {}
+
+            for cand in candidates:
+                for line_num, hit_count in self.covmap[cand]:
+                    if line_num not in merged_coverage:
+                        merged_coverage[line_num] = 0
+                    merged_coverage[line_num] += hit_count
+            logger.debug(f"Candidate hit for {fuzz_key}, summing candidates: {candidates}")
+            return sorted(merged_coverage.items())
+        return []
+
+    def _get_generic_candidates(self, fuzz_key: str) -> List[str]:
+        """Finds all monomorphized/generic variants for a given function key.
+        Uses a cached prefix index for O(1) retrieval instead of scanning all covmap keys."""
+        if getattr(self, '_generic_prefix_index', None) is None:
+            prefix_index: Dict[str, List[str]] = collections.defaultdict(list)
+            for k in self.covmap:
+                parts = k.split('::')
+                for i in range(1, len(parts)):
+                    prefix = '::'.join(parts[:i])
+                    prefix_index[prefix].append(k)
+            self._generic_prefix_index = prefix_index
+        return self._generic_prefix_index.get(fuzz_key, [])
+
 
     def _python_ast_funcname_to_cov_file(self, function_name) -> Optional[str]:
         """Convert a Python module path to a given file, and searches the
@@ -375,15 +408,34 @@ class CoverageProfile:
         elif utils.remove_jvm_generics(funcname) in self.covmap:
             fuzz_key = utils.remove_jvm_generics(funcname)
         else:
-            # Handle special case for rust where crate is missing from function name
-            fuzz_key = utils.locate_rust_fuzz_key(
-                utils.demangle_rust_func(funcname), self.covmap)
+            fuzz_key = utils.demangle_rust_func(funcname, strip_hash=True)
 
         if fuzz_key is None:
             return None, None
 
-        lines_hit = [ht for ln, ht in self.covmap[fuzz_key] if ht > 0]
-        return len(self.covmap[fuzz_key]), len(lines_hit)
+        if fuzz_key in self.covmap:
+            lines_hit = [ht for ln, ht in self.covmap[fuzz_key] if ht > 0]
+            return len(self.covmap[fuzz_key]), len(lines_hit)
+
+        # Handle Rust monomorphization: aggregate coverage across all generic instantiations
+        # (e.g., ryu::buffer::Buffer::format -> ryu::buffer::Buffer::format::f32) by calculating
+        # the union of unique source lines.
+        candidates = self._get_generic_candidates(fuzz_key)
+        if candidates:
+            # Count unique line numbers
+            unique_lines_total = set()
+            unique_lines_hit = set()
+
+            for cand in candidates:
+                for ln, ht in self.covmap[cand]:
+                    unique_lines_total.add(ln)
+                    if ht > 0:
+                        unique_lines_hit.add(ln)
+
+            logger.debug(f"Candidate match for {fuzz_key} as {cand}")
+            return len(unique_lines_total), len(unique_lines_hit)
+
+        return 0, 0
 
     def is_func_lineno_hit(self, func_name: str, lineno: int) -> bool:
         """
@@ -461,7 +513,7 @@ def load_llvm_coverage(target_dir: str,
         logger.info(f"Loading LLVM coverage for directory {target_dir}")
 
     all_coverage_reports = utils.get_all_files_in_tree_with_regex(
-        target_dir, ".*\.covreport$")
+        target_dir, ".*\\.covreport$")
     logger.info(f"Found {len(all_coverage_reports)} coverage reports")
 
     coverage_reports = list()
@@ -509,7 +561,7 @@ def load_llvm_coverage(target_dir: str,
                     else:
                         curr_func = line.replace(" ", "").replace(":", "")
                     if is_rust:
-                        curr_func = utils.demangle_rust_func(curr_func)
+                        curr_func = utils.demangle_rust_func(curr_func, strip_hash=True)
                     else:
                         curr_func = utils.demangle_cpp_func(curr_func)
                     cp.covmap[curr_func] = list()
