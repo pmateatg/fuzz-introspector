@@ -23,6 +23,7 @@ from typing import (
 
 import os
 import bs4
+import html
 import logging
 from datetime import datetime
 from enum import Enum
@@ -536,4 +537,4 @@ def wrap_link(url, text):
 
 
 def create_coded_text(text):
-    return f"<code class='language-clike'>\n{text}\n</code>"
+    return f"<code class='language-clike'>\n{html.escape(text)}\n</code>"
