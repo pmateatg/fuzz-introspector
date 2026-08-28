@@ -228,6 +228,14 @@ class RustSourceCodeFile(datatypes.SourceCodeFile):
 
         return None
 
+    def get_entry_function_name(self) -> str:
+        """Returns the entry function name of the harness if found"""
+        entry_func = self.get_entry_function()
+
+        if not entry_func:
+            return ""
+        return self.get_entry_function().name
+
 
 class RustFunction():
     """Wrapper for a General Declaration for function"""

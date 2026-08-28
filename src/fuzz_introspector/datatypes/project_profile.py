@@ -37,8 +37,8 @@ class MergedProjectProfile:
     digesting data from all the fuzzers in the project.
     """
 
-    def __init__(self, profiles: List[fuzzer_profile.FuzzerProfile],
-                 language: str):
+    def __init__(self, profiles: List[fuzzer_profile.FuzzerProfile], language: str,
+                 source_inventory: fuzzer_profile.FuzzerProfile | None = None):
         self.name = None
         self.profiles = profiles
         self.all_functions: Dict[str,
@@ -71,7 +71,9 @@ class MergedProjectProfile:
         # add duplicates
         logger.info("Creating all_functions dictionary")
         excluded_functions = {"sanitizer", "llvm", "LLVMFuzzerTestOneInput"}
+
         for profile in profiles:
+            logger.info(f"Running merge for {profile.introspector_data_file}")
             # Handles jvm constructors
             for fd in profile.all_class_constructors.values():
                 if fd.function_name not in self.all_constructors:
@@ -86,7 +88,7 @@ class MergedProjectProfile:
 
                 # populate hitcount and reached_by_fuzzers and whether it has been handled already
                 # Also populate the reached_by_fuzzers_runtime and reached_by_fuzzers_combined
-                for profile2 in profiles:
+                for profile2 in self.profiles:
                     # Statically reached functions
                     if profile2.reaches_func(fd.function_name):
                         fd.reached_by_fuzzers.append(profile2.identifier)
@@ -115,6 +117,11 @@ class MergedProjectProfile:
                 fd.hitcount = len(fd.reached_by_fuzzers)
                 fd.hitcount_runtime = len(fd.reached_by_fuzzers_runtime)
                 fd.hitcount_combined = len(fd.reached_by_fuzzers_combined)
+
+        if source_inventory:
+            logger.info(f"Source inventory found, backfilling the missing functions if any. Total functions before merge: {len(self.all_functions)}")
+            self._merge_source_inventory_graph(source_inventory)
+            logger.info(f"Total functions after merge: {len(self.all_functions)}")
 
         # Gather complexity information about each function
         logger.info(
@@ -201,6 +208,65 @@ class MergedProjectProfile:
         self._set_basefolder()
         self._set_fd_cache()
         logger.info("Completed creationg of merged profile")
+
+    def _merge_source_inventory_graph(self, ts_profile):
+        """
+        Merges the TreeSitter call graph into the LTO graph,
+        to ensure all the functions in the repository are considered.
+        """
+
+        added_count = 0
+        # Track matches to rewire callsites in the end
+        ts_to_lto_map = {}
+
+        suffix_index = utils.build_rust_lto_suffix_index(self.all_functions)
+
+        # Match and inject TS nodes
+        for ts_name, ts_func in ts_profile.all_class_functions.items():
+            lto_match = utils.locate_rust_fuzz_key(ts_name, self.all_functions, suffix_index)
+
+            if lto_match:
+                ts_to_lto_map[ts_name] = lto_match
+                continue
+
+            # Inject missing function based on TreeSitter metadata
+            self.all_functions[ts_name] = ts_func
+            self.unreached_functions.add(ts_name)
+
+            # Map it to itself for rewiring
+            ts_to_lto_map[ts_name] = ts_name
+            added_count += 1
+
+        # Rewire callsites for newly added functions, no need to process LTO functions,
+        # because we are here since these are not statically reachable by the fuzzer.
+        for func_name in self.all_functions:
+            if func_name not in ts_to_lto_map.values() or func_name not in self.unreached_functions:
+                continue
+
+            func_node = self.all_functions[func_name]
+
+            new_callsites = {}
+            # Iterate over the original callsites (e.g. "Writer::dump")
+            for dst, locs in func_node.callsite.items():
+
+                real_dst = dst
+
+                # Check if the destination is in LTO as-is
+                if dst in ts_to_lto_map:
+                    real_dst = ts_to_lto_map[dst]
+                else:
+                    # Dynamic Lookup: Destination might be an LTO node with generics or
+                    # the TreeSitter function name is missing the crate prefix
+                    match = utils.locate_rust_fuzz_key(dst, self.all_functions, suffix_index)
+                    if match:
+                        real_dst = match
+
+                new_callsites[real_dst] = locs
+
+            func_node.callsite = new_callsites
+            func_node.functions_called = list(new_callsites.keys())
+
+        logger.info(f"injected {added_count} TreeSitter functions and rewired call graph.")
 
     def get_all_runtime_covered_functions(self) -> List[str]:
         """Gets the name of all functions that are covered by runtime
@@ -556,7 +622,7 @@ class MergedProjectProfile:
         for fd_k, fd in self.all_functions.items():
             if self.target_lang == "rust":
                 self.dst_to_fd_cache[utils.demangle_rust_func(
-                    fd.function_name)] = fd
+                    fd.function_name, strip_hash=True)] = fd
             else:
                 self.dst_to_fd_cache[utils.demangle_cpp_func(
                     fd.function_name)] = fd

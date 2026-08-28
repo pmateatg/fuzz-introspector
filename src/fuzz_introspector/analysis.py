@@ -50,6 +50,7 @@ class IntrospectionProject():
         self.base_folder = target_folder
         self.coverage_url = coverage_url
         self.optional_analyses = []
+        self.source_inventory = None
 
     def load_data_files(self,
                         parallelise=True,
@@ -69,7 +70,8 @@ class IntrospectionProject():
                     fuzzer_profile.FuzzerProfile('cfg_file',
                                                  report_yaml,
                                                  self.language,
-                                                 cfg_content=calltree_text))
+                                                 cfg_content=calltree_text,
+                                                 project_graph_only=(self.language == "rust")))
         else:
             logger.info('Loading profiles using files')
             self.profiles = data_loader.load_all_profiles(
@@ -85,6 +87,13 @@ class IntrospectionProject():
         if correlation_dict is not None and "pairings" in correlation_dict:
             for profile in self.profiles:
                 profile.correlate_executable_name(correlation_dict)
+
+        source_inventory_files = utils.get_all_files_in_tree_with_regex(self.base_folder, r"sourceInventory.*\.data$")
+        if source_inventory_files:
+            if len(source_inventory_files) > 1:
+                logger.info(f"Found more than one source inventory files, but one should be enough, using {source_inventory_files[0]}")
+            # Reuse FuzzerProfile to load the YAML, but store it separately
+            self.source_inventory = data_loader.read_fuzzer_data_file_to_profile(source_inventory_files[0], self.language)
 
         logger.info("[+] Accummulating profiles")
         logger.info("Accummulating using multiprocessing")
@@ -113,7 +122,7 @@ class IntrospectionProject():
 
         logger.info("[+] Creating project profile")
         self.proj_profile = project_profile.MergedProjectProfile(
-            self.profiles, self.language)
+            self.profiles, self.language, self.source_inventory)
         self.proj_profile.coverage_url = self.coverage_url
 
         logger.info("[+] Refining profiles")
@@ -473,7 +482,6 @@ def get_parent_callsite_link(node, callstack, profile, target_coverage_url):
                 pass
     return "#"
 
-
 def propagate_hit_upwards(node: cfg_load.CalltreeCallsite, profile: project_profile.MergedProjectProfile) -> bool:
     """
     Recursively checks children. If any child is covered, mark this node
@@ -515,19 +523,33 @@ def propagate_hit_upwards(node: cfg_load.CalltreeCallsite, profile: project_prof
 
     return True
 
-
 def overlay_calltree_with_coverage(
         profile: fuzzer_profile.FuzzerProfile,
         proj_profile: project_profile.MergedProjectProfile, coverage_url: str,
         basefolder: str, out_dir) -> None:
-    # We use a helper function to recursively traverse nodes
-    target_coverage_url = utils.get_target_coverage_url(
-        coverage_url, profile.identifier, profile.target_lang)
+    # We use the callstack to keep track of all function parents. We need this
+    # when looking up if a callsite was hit or not. This is because the coverage
+    # information about a callsite is located in coverage data of the function
+    # in which the callsite is placed.
+    callstack: Dict[int, str] = {}
+
+    if profile.coverage is None:
+        return
 
     is_first = True
-    callstack = dict()
+    ct_idx = 0
+    if profile.fuzzer_callsite_calltree is None:
+        return
+
+    target_name = profile.identifier
+    target_coverage_url = utils.get_target_coverage_url(
+        coverage_url, target_name, profile.target_lang)
+    logger.info("Using coverage url: %s", target_coverage_url)
     for node in cfg_load.extract_all_callsites(
             profile.fuzzer_callsite_calltree):
+        node.cov_ct_idx = ct_idx
+        ct_idx += 1
+
         if profile.target_lang == "jvm":
             demangled_name = utils.demangle_jvm_func(
                 node.dst_function_source_file, node.dst_function_name)

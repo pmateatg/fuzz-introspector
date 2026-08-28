@@ -99,7 +99,7 @@ def analyse_folder(
         project = frontend_jvm.load_treesitter_trees(source_files, entrypoint)
     elif language == constants.LANGUAGES.RUST:
         logger.info('Going Rust route')
-        logger.info('Loading tree-sitter trees and create base project')
+        logger.info('Loading tree-sitter trees')
         project = frontend_rust.load_treesitter_trees(source_files)
     else:
         logger.error('Unsupported language: %s', language)
@@ -143,8 +143,24 @@ def analyse_folder(
         project.dump_macro_block_info(target, dump_output)
 
     # Process calltree and method data
-    for harness in project.get_source_codes_with_harnesses():
-        if language == 'go':
+
+    # Default: Process every harness individually and treat them as execution logs.
+    harnesses_to_process = project.get_source_codes_with_harnesses()
+    output_prefix = "fuzzerLogFile"
+    enable_pairings = True
+
+    # Rust LTO Strategy: Treesitter analysis is only used as source inventory to
+    # fill the gaps the Rust compilation optimized out
+    if language == "rust" and os.getenv("RUST_INTROSPECTOR_LTO") == "1":
+        output_prefix = "sourceInventory"
+        enable_pairings = False
+
+        # TreeSitter parses the whole crate, so one pass is sufficient.
+        if harnesses_to_process:
+            harnesses_to_process = [harnesses_to_process[0]]
+
+    for harness in harnesses_to_process:
+        if language in ['go', 'rust']:
             entry_function = harness.get_entry_function_name()
         else:
             entry_function = entrypoint
@@ -153,7 +169,7 @@ def analyse_folder(
 
         # Functions/Methods data
         logger.info('Dump methods for %s', harness_name)
-        target = os.path.join(out, f'fuzzerLogFile-{harness_name}.data.yaml')
+        target = os.path.join(out, f'{output_prefix}-{harness_name}.data.yaml')
         project.dump_module_logic(target,
                                   entry_function=entry_function,
                                   harness_name=harness_name,
@@ -166,19 +182,20 @@ def analyse_folder(
                                             entry_function)
         logger.info('Calltree extracted')
         if dump_output:
-            target = os.path.join(out, f'fuzzerLogFile-{harness_name}.data')
+            target = os.path.join(out, f'{output_prefix}-{harness_name}.data')
             with open(target, 'w', encoding='utf-8') as f:
                 f.write(f'Call tree\n{calltree}')
 
-        for textcov in textcov_reports:
-            cov_name = textcov.replace('.covreport', '')
-            if cov_name == harness_name:
-                pairings.append({
-                    'executable_path':
-                    f'/out/{cov_name}',
-                    'fuzzer_log_file':
-                    f'fuzzerLogFile-{harness_name}.data'
-                })
+        if enable_pairings:
+            for textcov in textcov_reports:
+                cov_name = textcov.replace('.covreport', '')
+                if cov_name == harness_name:
+                    pairings.append({
+                        'executable_path':
+                        f'/out/{cov_name}',
+                        'fuzzer_log_file':
+                        f'fuzzerLogFile-{harness_name}.data'
+                    })
 
         # Type definition
         target = os.path.join(out, 'full_type_defs.json')
